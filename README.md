@@ -1,4 +1,4 @@
-# medical-perso — sync chiffré OVH Object Storage
+# Asclépios — sync chiffré OVH Object Storage
 
 Synchronisation d’un dossier local `data/` vers un bucket OVH Object Storage (S3), avec chiffrement côté client avant l’envoi.
 
@@ -26,7 +26,7 @@ Les fichiers sont chiffrés **avant** l’upload (`ENCRYPTION_KEY` dans `.env`).
 ## Installation
 
 ```bash
-cd medical-perso
+cd asclepios
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -37,7 +37,7 @@ cp .env.example .env
 Remplir `.env` :
 
 - `OVH_ACCESS_KEY` / `OVH_SECRET_KEY` — clés S3 de l’utilisateur Object Storage
-- `OVH_BUCKET` — nom du conteneur (ex. `medical-perso`)
+- `OVH_BUCKET` — nom du conteneur (ex. `asclepios`)
 - `OVH_REGION` / `OVH_ENDPOINT` — déjà préremplis pour Paris (`eu-west-par`)
 - `ENCRYPTION_KEY` — clé Fernet déjà présente dans ton `.env` ; **ne pas la changer** tant que des fichiers chiffrés existent sur OVH, sinon tu ne pourras plus les déchiffrer
 
@@ -95,7 +95,7 @@ python data/scripts/<script>.py
 ## Structure
 
 ```text
-medical-perso/
+asclepios/
 ├── .env                 # secrets (non versionné)
 ├── .env.example
 ├── scripts/
