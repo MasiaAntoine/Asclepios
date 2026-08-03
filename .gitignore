@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.rclone/
+.sync_state.json
+*.key
+data/*
+!data/.gitkeep
