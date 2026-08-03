@@ -30,6 +30,7 @@ CANONICAL_DIRS = (
     "pdf-generes",
     "prise-de-sang",
     "medicaments",
+    "rapports",
     "scripts",
 )
 

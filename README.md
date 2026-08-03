@@ -4,13 +4,11 @@ Synchronisation d’un dossier local `data/` vers un bucket OVH Object Storage (
 
 ## Principe
 
-
-| Commande | Effet |
-| -------- | ----- |
-| `push`   | Sync incrémental data→OVH (ajout / modif / suppression) |
-| `pull`   | Sync incrémental OVH→data (ajout / modif / suppression) |
+| Commande   | Effet                                                          |
+| ---------- | -------------------------------------------------------------- |
+| `push`     | Sync incrémental data→OVH (ajout / modif / suppression)        |
+| `pull`     | Sync incrémental OVH→data (ajout / modif / suppression)        |
 | `… --full` | Resync complète (wipe puis tout renvoyer / tout retélécharger) |
-
 
 Le dossier unique de travail est `data/` : c’est à la fois la source du push et la destination du pull.
 
@@ -102,7 +100,6 @@ asclepios/
 │   └── sync.py          # seul script public : push / pull chiffré
 ├── requirements.txt
 ├── data/                # travail local + scripts métier (non versionné, sync OVH)
-│   └── scripts/         # rapports / utilitaires liés aux données
 └── README.md
 ```
 
