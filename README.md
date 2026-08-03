@@ -14,7 +14,7 @@ Synchronisation d’un dossier local `data/` vers un bucket OVH Object Storage (
 
 Le dossier unique de travail est `data/` : c’est à la fois la source du push et la destination du pull.
 
-**Structure sur OVH** : chaque dossier de `data/` est stocké comme objet chiffré (`dossier/.ovhdir`) avec son chemin relatif dans le blob. Au `pull`, les dossiers sont recréés depuis OVH — pas de manifeste local indispensable.
+**Structure** : chaque fichier chiffré embarque son chemin relatif. Au `pull`, l’arborescence est déduite automatiquement de ces chemins (plus de marqueurs `.ovhdir`). Les dossiers métier vides attendus (`pdf-generes`, `prise-de-sang`, `medicaments`, `scripts`) sont recréés localement.
 
 Les fichiers sont chiffrés **avant** l’upload (`ENCRYPTION_KEY` dans `.env`). OVH ne stocke que des blobs illisibles. Un chiffrement serveur (SSE-OMK) peut s’ajouter côté OVH, mais la clé perso reste obligatoire pour relire les données.
 
@@ -60,10 +60,10 @@ python scripts/sync.py push
 
 Comportement (incrémental) :
 
-1. marqueurs `dossier/.ovhdir` pour l’arborescence
+1. arborescence déduite des chemins de fichiers dans `data/`
 2. hash de chaque fichier local comparé à l’état (`.sync_state.json`)
 3. upload seulement des fichiers **nouveaux ou modifiés**
-4. suppression sur OVH des fichiers **effacés en local** (et orphelins)
+4. suppression sur OVH des fichiers **effacés en local** (et orphelins / anciens `.ovhdir`)
 
 Resync totale si besoin : `python scripts/sync.py push --full`
 
@@ -78,7 +78,7 @@ Comportement (incrémental) :
 1. listing OVH + comparaison des hash (métadonnées / état local)
 2. téléchargement seulement des fichiers **nouveaux ou modifiés**
 3. suppression en local des fichiers **absents d’OVH**
-4. dossiers recréés via les marqueurs `.ovhdir`
+4. dossiers recréés depuis les chemins embarqués dans les blobs (+ dossiers canoniques)
 
 Resync totale : `python scripts/sync.py pull --full`
 

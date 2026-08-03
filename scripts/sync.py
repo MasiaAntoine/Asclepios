@@ -20,11 +20,12 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 STATE_FILE = ROOT / ".sync_state.json"
 MARKER = b"MEDENC2\n"
-DIR_MARKER_NAME = ".ovhdir"
-DIR_MARKER_PAYLOAD = b"OVHDIR\n"
-SKIP_NAMES = {".DS_Store", ".vault_structure.json", "__pycache__"}
+# Marqueurs d'ancienne génération — ignorés / nettoyés, plus synchronisés.
+LEGACY_DIR_MARKER = ".ovhdir"
+SKIP_NAMES = {".DS_Store", ".vault_structure.json", "__pycache__", LEGACY_DIR_MARKER}
 META_SHA = "sha256"
 
+# Dossiers attendus même vides (créés localement, pas stockés sur OVH).
 CANONICAL_DIRS = (
     "pdf-generes",
     "prise-de-sang",
@@ -67,7 +68,12 @@ def s3_client(cfg: dict):
         aws_secret_access_key=cfg["secret_key"],
         endpoint_url=cfg["endpoint"],
         region_name=cfg["region"],
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            connect_timeout=15,
+            read_timeout=120,
+            retries={"max_attempts": 3, "mode": "standard"},
+        ),
     )
 
 
@@ -133,49 +139,46 @@ def _is_skipped(path: Path) -> bool:
     return any(part in SKIP_NAMES or part == "__pycache__" for part in path.parts)
 
 
-def collect_dirs(data_dir: Path) -> list[str]:
-    dirs: set[str] = set(CANONICAL_DIRS)
-    if not data_dir.exists():
-        return sorted(dirs)
-
-    for path in data_dir.rglob("*"):
-        if _is_skipped(path):
-            continue
-        if path.is_file():
-            parent = path.parent.relative_to(data_dir)
-            if parent != Path("."):
-                for i in range(1, len(parent.parts) + 1):
-                    dirs.add(Path(*parent.parts[:i]).as_posix())
-        elif path.is_dir():
-            rel = path.relative_to(data_dir).as_posix()
-            if rel and rel != ".":
-                dirs.add(rel)
-    return sorted(dirs)
-
-
-def materialize_dir_markers(data_dir: Path) -> list[str]:
+def ensure_canonical_dirs(data_dir: Path) -> None:
+    """Crée les dossiers métier attendus (même vides)."""
     data_dir.mkdir(parents=True, exist_ok=True)
-    legacy = data_dir / ".vault_structure.json"
-    if legacy.exists():
-        legacy.unlink()
+    for rel in CANONICAL_DIRS:
+        (data_dir / rel).mkdir(parents=True, exist_ok=True)
 
-    dirs = collect_dirs(data_dir)
-    for rel in dirs:
-        folder = data_dir / rel
-        folder.mkdir(parents=True, exist_ok=True)
-        marker = folder / DIR_MARKER_NAME
-        marker.write_bytes(DIR_MARKER_PAYLOAD + rel.encode("utf-8") + b"\n")
+
+def purge_legacy_markers(data_dir: Path) -> int:
+    """Supprime les anciens .ovhdir / .vault_structure.json locaux."""
+    if not data_dir.exists():
+        return 0
+    removed = 0
+    legacy_manifest = data_dir / ".vault_structure.json"
+    if legacy_manifest.exists():
+        legacy_manifest.unlink()
+        removed += 1
+    for path in data_dir.rglob(LEGACY_DIR_MARKER):
+        if path.is_file():
+            path.unlink()
+            removed += 1
+    return removed
+
+
+def dirs_from_paths(relative_paths: set[str] | list[str]) -> set[str]:
+    """Déduit l'arborescence à partir des chemins de fichiers."""
+    dirs: set[str] = set(CANONICAL_DIRS)
+    for relative in relative_paths:
+        parent = Path(relative).parent
+        if parent == Path("."):
+            continue
+        for i in range(1, len(parent.parts) + 1):
+            dirs.add(Path(*parent.parts[:i]).as_posix())
     return dirs
 
 
-def ensure_canonical_dirs(data_dir: Path) -> None:
+def materialize_dirs(data_dir: Path, relative_paths: set[str] | list[str]) -> None:
+    """Recrée les dossiers à partir des chemins de fichiers (+ canoniques)."""
     data_dir.mkdir(parents=True, exist_ok=True)
-    for rel in CANONICAL_DIRS:
-        folder = data_dir / rel
-        folder.mkdir(parents=True, exist_ok=True)
-        marker = folder / DIR_MARKER_NAME
-        if not marker.exists():
-            marker.write_bytes(DIR_MARKER_PAYLOAD + rel.encode("utf-8") + b"\n")
+    for rel in sorted(dirs_from_paths(relative_paths)):
+        (data_dir / rel).mkdir(parents=True, exist_ok=True)
 
 
 def iter_local_files(data_dir: Path):
@@ -275,11 +278,16 @@ def remove_empty_dirs(data_dir: Path) -> None:
 def cmd_push(cfg: dict, *, full: bool = False) -> None:
     data_dir: Path = cfg["data_dir"]
     data_dir.mkdir(parents=True, exist_ok=True)
-    dirs = materialize_dir_markers(data_dir)
-    print(f"Dossiers suivis ({DIR_MARKER_NAME}) : {len(dirs)}")
+    purged = purge_legacy_markers(data_dir)
+    if purged:
+        print(f"Nettoyage marqueurs legacy : {purged} fichier(s)")
+    ensure_canonical_dirs(data_dir)
 
     client = s3_client(cfg)
     local = scan_local(data_dir)
+    tree = dirs_from_paths(local)
+    print(f"Arborescence déduite des fichiers : {len(tree)} dossier(s)")
+
     state = load_state()
     old_files: dict = state.get("files", {})
 
@@ -315,14 +323,22 @@ def cmd_push(cfg: dict, *, full: bool = False) -> None:
             except ClientError:
                 pass  # re-upload
 
+        action = "nouveau" if relative not in old_files else "modifié"
+        print(f"↑ {relative}  ({action})…", flush=True)
         key = upload_file(client, cfg, relative, info["data"], sha)
         new_state_files[relative] = {"key": key, "sha256": sha}
-        kind = "dossier" if Path(relative).name == DIR_MARKER_NAME else "fichier"
-        action = "nouveau" if relative not in old_files else "modifié"
-        print(f"↑ {relative}  ({action}, {kind})")
         uploaded += 1
+        # Sauvegarde progressive : un Ctrl+C ne force pas à tout renvoyer
+        save_state(
+            {
+                "files": {
+                    **{p: old_files[p] for p in local if p in old_files},
+                    **new_state_files,
+                }
+            }
+        )
 
-    # Suppressions distantes : plus présents en local
+    # Suppressions distantes : plus présents en local (y compris anciens .ovhdir)
     expected_keys = {remote_key(cfg, rel) for rel in local}
     remote_keys = set(list_remote_objects(client, cfg))
     to_delete = sorted(remote_keys - expected_keys)
@@ -342,7 +358,6 @@ def cmd_push(cfg: dict, *, full: bool = False) -> None:
     deleted = delete_remote_keys(client, cfg, to_delete)
 
     save_state({"files": new_state_files})
-    ensure_canonical_dirs(data_dir)
     print(
         f"Push terminé : {uploaded} envoyé(s), {skipped} inchangé(s), "
         f"{deleted} supprimé(s) sur OVH."
@@ -385,6 +400,10 @@ def cmd_pull(cfg: dict, *, full: bool = False) -> None:
         remote_sha = None if full else head_remote_sha(client, cfg, key)
         relative = key_to_path.get(key)
 
+        # Anciens marqueurs .ovhdir : ignorés (retirés au prochain push)
+        if relative and Path(relative).name == LEGACY_DIR_MARKER:
+            continue
+
         # Raccourci : chemin connu + hash local identique au remote
         if (
             not full
@@ -417,6 +436,9 @@ def cmd_pull(cfg: dict, *, full: bool = False) -> None:
             failed += 1
             continue
 
+        if Path(relative).name == LEGACY_DIR_MARKER:
+            continue
+
         sha = remote_sha or file_sha256(plain)
         remote_paths.add(relative)
 
@@ -434,9 +456,8 @@ def cmd_pull(cfg: dict, *, full: bool = False) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(plain)
         new_state_files[relative] = {"key": key, "sha256": file_sha256(plain)}
-        kind = "dossier" if Path(relative).name == DIR_MARKER_NAME else "fichier"
         action = "nouveau" if relative not in local else "modifié"
-        print(f"↓ {relative}  ({action}, {kind})")
+        print(f"↓ {relative}  ({action})")
         downloaded += 1
 
     # Suppressions locales : plus présents sur OVH
@@ -448,10 +469,15 @@ def cmd_pull(cfg: dict, *, full: bool = False) -> None:
                 path.unlink()
                 print(f"× {relative}  (absent d'OVH → retiré en local)")
                 removed += 1
+
+    # Arborescence = chemins des fichiers distants + dossiers canoniques
+    materialize_dirs(data_dir, remote_paths)
+    purge_legacy_markers(data_dir)
+    if not full:
         remove_empty_dirs(data_dir)
+        ensure_canonical_dirs(data_dir)
 
     save_state({"files": new_state_files})
-    ensure_canonical_dirs(data_dir)
     print(
         f"Pull terminé : {downloaded} reçu(s), {skipped} inchangé(s), "
         f"{removed} supprimé(s) en local, {failed} échec(s)."
