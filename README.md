@@ -12,7 +12,7 @@ Synchronisation d’un dossier local `data/` vers un bucket OVH Object Storage (
 
 Le dossier unique de travail est `data/` : c’est à la fois la source du push et la destination du pull.
 
-**Structure** : chaque fichier chiffré embarque son chemin relatif. Au `pull`, l’arborescence est déduite automatiquement de ces chemins (plus de marqueurs `.ovhdir`). Les dossiers métier vides attendus (`pdf-generes`, `prise-de-sang`, `medicaments`, `scripts`) sont recréés localement.
+**Structure** : chaque fichier chiffré embarque son chemin relatif. Au `pull`, l’arborescence est déduite automatiquement de ces chemins (plus de marqueurs `.ovhdir`). Les dossiers métier vides attendus (`pdf-generes`, `prise-de-sang`, `medicaments`, `rapports`, `traumas`, `scripts`) sont recréés localement.
 
 Les fichiers sont chiffrés **avant** l’upload (`ENCRYPTION_KEY` dans `.env`). OVH ne stocke que des blobs illisibles. Un chiffrement serveur (SSE-OMK) peut s’ajouter côté OVH, mais la clé perso reste obligatoire pour relire les données.
 

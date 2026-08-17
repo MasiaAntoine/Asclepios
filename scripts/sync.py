@@ -29,11 +29,13 @@ META_SHA = "sha256"
 CANONICAL_DIRS = (
     "pdf-generes",
     "pdf-generes/rapport",
+    "pdf-generes/trauma",
     "pdf-generes/compte-rendu",
     "pdf-generes/traitement",
     "prise-de-sang",
     "medicaments",
     "rapports",
+    "traumas",
     "scripts",
 )
 
