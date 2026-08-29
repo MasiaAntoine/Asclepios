@@ -106,8 +106,8 @@ const eventLabels: Record<string, string> = {
         </div>
         <PdfButton
           v-if="med"
-          generate-endpoint="/pdf/generate/traitements"
-          label="Fiche PDF"
+          :download-endpoint="`/pdf/download/traitements?filtre=${encodeURIComponent(med.nom)}`"
+          label="Télécharger le PDF"
         />
         <a
           v-if="med?.source"

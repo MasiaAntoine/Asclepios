@@ -2,32 +2,6 @@ import { ref } from 'vue'
 
 const API_BASE = '/api'
 
-export type PdfCategory = 'rapport' | 'trauma' | 'compte-rendu' | 'traitement'
-
-export interface PdfList {
-  rapport: string[]
-  trauma: string[]
-  'compte-rendu': string[]
-  traitement: string[]
-}
-
-/** Charge la liste des PDFs existants depuis l'API. */
-export async function fetchPdfList(): Promise<PdfList> {
-  const res = await fetch(`${API_BASE}/pdf/list`)
-  if (!res.ok) throw new Error(`PDF list unavailable (${res.status})`)
-  return res.json() as Promise<PdfList>
-}
-
-/** Vérifie si un PDF spécifique est accessible (HEAD request sur /data/…). */
-export async function pdfExists(dataPath: string): Promise<boolean> {
-  try {
-    const res = await fetch(dataPath, { method: 'HEAD' })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
 /** Composable générique pour déclencher un endpoint SSE et afficher les logs. */
 export function useSseStream() {
   const lines = ref<string[]>([])

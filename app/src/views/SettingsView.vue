@@ -8,7 +8,6 @@ import {
   KeyRound,
   Loader,
   Server,
-  Terminal,
   X,
 } from '@lucide/vue'
 
@@ -73,7 +72,7 @@ onMounted(() => {
     <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-6">
       <h1 class="text-2xl font-bold text-[var(--foreground)]">Paramètres</h1>
       <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-        Synchronisation OVH, génération PDF et configuration
+        Synchronisation OVH et configuration
       </p>
     </div>
 
@@ -152,26 +151,6 @@ onMounted(() => {
               Annuler
             </button>
           </div>
-        </section>
-
-        <!-- Pipeline -->
-        <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <div class="mb-4 flex items-center gap-2">
-            <Terminal :size="16" class="text-[var(--primary)]" />
-            <h2 class="text-sm font-semibold text-[var(--foreground)]">Pipeline PDF + sync</h2>
-          </div>
-          <p class="mb-4 text-xs text-[var(--muted-foreground)]">
-            Régénère tous les comptes-rendus PDF puis pousse vers OVH.
-          </p>
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] disabled:opacity-50"
-            :disabled="syncRunning"
-            @click="runAction('/pipeline/run', 'Pipeline')"
-          >
-            <Terminal :size="15" />
-            Lancer le pipeline
-          </button>
         </section>
 
         <!-- Terminal -->

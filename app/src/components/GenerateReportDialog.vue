@@ -108,7 +108,7 @@ function openReport() {
   <Dialog
     v-model:open="open"
     title="Générer un rapport avec l'IA"
-    description="Collez du texte brut (notes, résumé, journal) — l'IA (gemini-3.7-flash) le transforme en rapport médical structuré, génère le PDF et synchronise sur OVH."
+    description="Collez du texte brut (notes, résumé, journal) — l'IA (gemini-3.7-flash) le transforme en rapport médical structuré et synchronise sur OVH."
   >
     <template #trigger>
       <button

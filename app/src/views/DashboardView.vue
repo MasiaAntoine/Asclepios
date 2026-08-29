@@ -389,10 +389,10 @@ function go(path: string) {
             <div>
               <div class="flex items-center gap-2">
                 <Cloud :size="16" class="text-[var(--primary)]" />
-                <h2 class="text-sm font-semibold text-[var(--foreground)]">PDF & synchronisation OVH</h2>
+                <h2 class="text-sm font-semibold text-[var(--foreground)]">Synchronisation OVH</h2>
               </div>
               <p class="mt-1 text-xs text-[var(--muted-foreground)]">
-                Pipeline complet, push / pull et statut de configuration.
+                Push / pull et statut de configuration.
               </p>
             </div>
             <button

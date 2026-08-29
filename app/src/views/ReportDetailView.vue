@@ -264,10 +264,8 @@ onUnmounted(() => {
               {{ formatDate(report.date) }}
             </span>
             <PdfButton
-              :pdf-url="`/data/pdf-generes/rapport/${reportId}.pdf`"
-              :generate-endpoint="`/pdf/generate/report/${reportId}`"
-              label="Rapport PDF"
-              :auto-generate="true"
+              :download-endpoint="`/pdf/download/report/${reportId}`"
+              label="Télécharger le PDF"
             />
           </div>
         </div>

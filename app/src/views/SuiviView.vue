@@ -421,13 +421,13 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
         <div class="flex flex-wrap items-center gap-2">
           <PdfButton
             v-if="activeTab === 'labs'"
-            generate-endpoint="/pdf/generate/labs"
-            label="Compte-rendu PDF"
+            download-endpoint="/pdf/download/labs"
+            label="Télécharger le PDF"
           />
           <PdfButton
             v-else
-            generate-endpoint="/pdf/generate/traitements"
-            label="Compte-rendu PDF"
+            download-endpoint="/pdf/download/traitements"
+            label="Télécharger le PDF"
           />
           <AddSuiviEntryDialog
             v-if="activeTab === 'labs'"

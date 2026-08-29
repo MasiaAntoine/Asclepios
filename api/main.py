@@ -4,20 +4,24 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json as _json
 import os
 import re
 import sys
+import tempfile
 import unicodedata
+import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import AsyncGenerator
 import uuid
+from urllib.parse import quote
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
@@ -35,8 +39,6 @@ PYTHON = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else sys.executable
 _DIR_A = DATA_DIR / "rapports"
 _DIR_B = DATA_DIR / "traumas"
 _DIR_C = DATA_DIR / "medicaments"
-_DIR_PDF_A = DATA_DIR / "pdf-generes" / "rapport"
-_DIR_PDF_B = DATA_DIR / "pdf-generes" / "trauma"
 
 # ── Scripts de génération ───────────────────────────────────────────────────
 
@@ -78,13 +80,6 @@ SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 
-def _list_category(category: str) -> list[str]:
-    d = DATA_DIR / "pdf-generes" / category
-    if not d.exists():
-        return []
-    return sorted(p.name for p in d.glob("*.pdf"))
-
-
 async def _stream_cmd(label: str, cmd: list[str]) -> AsyncGenerator[bytes, None]:
     yield f"data: ▶  {label}\n\n".encode()
     try:
@@ -105,6 +100,49 @@ async def _stream_cmd(label: str, cmd: list[str]) -> AsyncGenerator[bytes, None]
         yield f"data: ✗ Exception: {exc}\n\n".encode()
 
 
+async def _run_cmd(cmd: list[str]) -> None:
+    """Exécute une commande ; lève HTTP 500 si échec."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+        cwd=str(ROOT),
+    )
+    assert proc.stdout is not None
+    logs: list[str] = []
+    async for raw in proc.stdout:
+        line = raw.decode("utf-8", errors="replace").rstrip()
+        if line:
+            logs.append(line)
+    rc = (await proc.wait()) or 0
+    if rc != 0:
+        detail = "\n".join(logs[-20:]) or f"Code {rc}"
+        raise HTTPException(status_code=500, detail=f"Génération PDF échouée : {detail}")
+
+
+def _attachment_response(data: bytes, filename: str, media_type: str) -> Response:
+    ascii_name = re.sub(r"[^A-Za-z0-9._-]", "_", filename) or "download"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            ),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _zip_bytes(files: list[tuple[str, bytes]]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files:
+            zf.writestr(name, data)
+    return buf.getvalue()
+
+
 def _safe_filename(name: str, *, allow_ext: str = ".md") -> str:
     safe = re.sub(r"[^a-zA-Z0-9_\-.]", "", name)
     if not safe.endswith(allow_ext):
@@ -112,97 +150,107 @@ def _safe_filename(name: str, *, allow_ext: str = ".md") -> str:
     return safe
 
 
-# ── Pipeline complet ─────────────────────────────────────────────────────────
-
-_PIPELINE: list[tuple[str, list[str]]] = [
-    ("Étape 1/5", [PYTHON, str(_SCRIPT_DOCS),   "--no-push"]),
-    ("Étape 2/5", [PYTHON, str(_SCRIPT_WEIGHT), "--periode", "tout", "--no-push"]),
-    ("Étape 3/5", [PYTHON, str(_SCRIPT_BIO),    "--no-push"]),
-    ("Étape 4/5", [PYTHON, str(_SCRIPT_BIO2),   "--no-push"]),
-    ("Étape 5/5", [PYTHON, str(_SCRIPT_RX),     "--no-push"]),
-    ("Sync",      [PYTHON, str(_SCRIPT_SYNC),   "push"]),
-]
-
-
-# ── Endpoints ───────────────────────────────────────────────────────────────
-
-
-@app.get("/api/pdf/list")
-def list_pdfs() -> dict[str, list[str]]:
-    return {cat: _list_category(cat) for cat in ["rapport", "trauma", "compte-rendu", "traitement"]}
-
-
-@app.post("/api/pipeline/run")
-async def run_pipeline():
-    async def stream() -> AsyncGenerator[bytes, None]:
-        yield "data: Démarrage...\n\n".encode()
-        for label, cmd in _PIPELINE:
-            async for chunk in _stream_cmd(label, cmd):
-                yield chunk
-        yield b"data: [DONE]\n\n"
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
-
-
-@app.post("/api/pdf/generate/reports")
-async def generate_reports():
-    async def stream() -> AsyncGenerator[bytes, None]:
-        async for chunk in _stream_cmd("Génération documents", [PYTHON, str(_SCRIPT_DOCS), "--no-push"]):
-            yield chunk
-        yield b"data: [DONE]\n\n"
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
-
-
-@app.post("/api/pdf/generate/report/{report_id}")
-async def generate_single_report(report_id: str):
+def _resolve_md_doc(report_id: str) -> Path:
     safe_id = re.sub(r"[^a-zA-Z0-9_\-]", "", report_id.removesuffix(".md"))
     if not safe_id:
         raise HTTPException(status_code=400, detail="Identifiant invalide")
     path_a = _DIR_A / f"{safe_id}.md"
     path_b = _DIR_B / f"{safe_id}.md"
     if path_a.exists():
-        md_path = path_a
-    elif path_b.exists():
-        md_path = path_b
-    else:
-        raise HTTPException(status_code=404, detail="Document introuvable")
-
-    async def stream() -> AsyncGenerator[bytes, None]:
-        async for chunk in _stream_cmd(
-            "Génération PDF",
-            [PYTHON, str(_SCRIPT_DOCS), str(md_path), "--no-push"],
-        ):
-            yield chunk
-        yield b"data: [DONE]\n\n"
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+        return path_a
+    if path_b.exists():
+        return path_b
+    raise HTTPException(status_code=404, detail="Document introuvable")
 
 
-@app.post("/api/pdf/generate/poids")
-async def generate_poids():
-    async def stream() -> AsyncGenerator[bytes, None]:
-        async for chunk in _stream_cmd("Génération PDF", [PYTHON, str(_SCRIPT_WEIGHT), "--periode", "tout", "--no-push"]):
-            yield chunk
-        yield b"data: [DONE]\n\n"
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+# ── Endpoints PDF (génération à la volée) ───────────────────────────────────
 
 
-@app.post("/api/pdf/generate/labs")
-async def generate_labs():
-    async def stream() -> AsyncGenerator[bytes, None]:
-        async for chunk in _stream_cmd("Génération PDF (1/2)", [PYTHON, str(_SCRIPT_BIO),  "--no-push"]):
-            yield chunk
-        async for chunk in _stream_cmd("Génération PDF (2/2)", [PYTHON, str(_SCRIPT_BIO2), "--no-push"]):
-            yield chunk
-        yield b"data: [DONE]\n\n"
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+@app.get("/api/pdf/download/report/{report_id}")
+async def download_report_pdf(report_id: str):
+    """Génère le PDF d'un rapport/trauma et le renvoie en téléchargement."""
+    md_path = _resolve_md_doc(report_id)
+    safe_id = md_path.stem
+    with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
+        out = Path(td) / f"{safe_id}.pdf"
+        await _run_cmd(
+            [PYTHON, str(_SCRIPT_DOCS), str(md_path), "--output", str(out), "--no-push"]
+        )
+        if not out.exists():
+            raise HTTPException(status_code=500, detail="PDF non généré")
+        return _attachment_response(out.read_bytes(), f"{safe_id}.pdf", "application/pdf")
 
 
-@app.post("/api/pdf/generate/traitements")
-async def generate_traitements():
-    async def stream() -> AsyncGenerator[bytes, None]:
-        async for chunk in _stream_cmd("Génération PDF", [PYTHON, str(_SCRIPT_RX), "--no-push"]):
-            yield chunk
-        yield b"data: [DONE]\n\n"
-    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+@app.get("/api/pdf/download/poids")
+async def download_poids_pdf():
+    """Génère le compte-rendu poids et le renvoie en téléchargement."""
+    with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
+        out = Path(td) / "compte_rendu_poids.pdf"
+        await _run_cmd(
+            [
+                PYTHON,
+                str(_SCRIPT_WEIGHT),
+                "--periode",
+                "tout",
+                "--output",
+                str(out),
+                "--no-push",
+            ]
+        )
+        if not out.exists():
+            raise HTTPException(status_code=500, detail="PDF non généré")
+        return _attachment_response(
+            out.read_bytes(), "compte_rendu_poids.pdf", "application/pdf"
+        )
+
+
+@app.get("/api/pdf/download/labs")
+async def download_labs_pdf():
+    """Génère les PDF labos (thyroïde + comparaison) et renvoie un ZIP."""
+    with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
+        tdir = Path(td)
+        out1 = tdir / "compte_rendu_thyroide.pdf"
+        out2 = tdir / "comparaison_tsh_levothyrox.pdf"
+        await _run_cmd(
+            [PYTHON, str(_SCRIPT_BIO), "--output", str(out1), "--no-push"]
+        )
+        await _run_cmd(
+            [PYTHON, str(_SCRIPT_BIO2), "--output", str(out2), "--no-push"]
+        )
+        files: list[tuple[str, bytes]] = []
+        for path in (out1, out2):
+            if path.exists():
+                files.append((path.name, path.read_bytes()))
+        if not files:
+            raise HTTPException(status_code=500, detail="PDF non générés")
+        if len(files) == 1:
+            name, data = files[0]
+            return _attachment_response(data, name, "application/pdf")
+        return _attachment_response(
+            _zip_bytes(files), "comptes_rendus_labs.zip", "application/zip"
+        )
+
+
+@app.get("/api/pdf/download/traitements")
+async def download_traitements_pdf(filtre: str | None = Query(default=None)):
+    """Génère le(s) PDF traitement(s) ; un PDF ou un ZIP selon le nombre."""
+    with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
+        outdir = Path(td)
+        cmd = [PYTHON, str(_SCRIPT_RX), "--outdir", str(outdir), "--no-push"]
+        if filtre:
+            cmd.append(filtre)
+        await _run_cmd(cmd)
+        pdfs = sorted(outdir.glob("*.pdf"))
+        if not pdfs:
+            raise HTTPException(status_code=500, detail="PDF non générés")
+        if len(pdfs) == 1:
+            p = pdfs[0]
+            return _attachment_response(p.read_bytes(), p.name, "application/pdf")
+        return _attachment_response(
+            _zip_bytes([(p.name, p.read_bytes()) for p in pdfs]),
+            "traitements.pdf.zip" if not filtre else f"traitement_{filtre}.zip",
+            "application/zip",
+        )
 
 
 # ── Médicaments ──────────────────────────────────────────────────────────────
@@ -801,9 +849,6 @@ async def generate_with_ai(body: GenerateRequest):
         filepath.write_text(markdown, encoding="utf-8")
         yield f"data: Document sauvegardé\n\n".encode()
 
-        async for chunk in _stream_cmd("Génération PDF", [PYTHON, str(_SCRIPT_DOCS), str(filepath), "--no-push"]):
-            yield chunk
-
         async for chunk in _stream_cmd("Sync", [PYTHON, str(_SCRIPT_SYNC), "push"]):
             yield chunk
 
@@ -989,6 +1034,7 @@ def list_chats() -> dict:
             "updated_at": data.get("updated_at"),
             "message_count": len(msgs),
             "preview": preview,
+            "report_id": data.get("report_id"),
         })
     items.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
     return {"conversations": items}
@@ -1005,6 +1051,7 @@ def create_chat() -> dict:
         "created_at": now,
         "updated_at": now,
         "messages": [],
+        "report_id": None,
     }
     _save_chat(data)
     return data
@@ -1017,21 +1064,132 @@ def get_chat(chat_id: str) -> dict:
 
 @app.post("/api/chats/{chat_id}/delete")
 async def delete_chat(chat_id: str):
-    """Supprime une conversation et synchronise OVH."""
+    """Supprime une conversation (interdit si liée à un rapport), puis sync OVH."""
     path = _chat_path(chat_id)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Conversation introuvable")
 
-    async def stream() -> AsyncGenerator[bytes, None]:
+    chat = _load_chat(chat_id)
+    if chat.get("report_id"):
+        raise HTTPException(
+            status_code=403,
+            detail="Conversation liée à un rapport : suppression impossible",
+        )
+
+    path.unlink()
+
+    # Sync en arrière-plan pour répondre immédiatement à l'UI
+    async def _sync_later() -> None:
         try:
-            path.unlink()
-            yield "data: \u2713 Conversation supprimée\n\n".encode()
+            async for _ in _stream_cmd("Sync", [PYTHON, str(_SCRIPT_SYNC), "push"]):
+                pass
+        except Exception:
+            pass
+
+    asyncio.create_task(_sync_later())
+    return {"ok": True, "id": chat_id}
+
+
+def _conversation_as_source(chat: dict) -> str:
+    """Transforme toute la conversation en texte source pour génération de rapport."""
+    lines = [
+        f"Titre de la conversation : {chat.get('title') or 'Sans titre'}",
+        f"ID conversation : {chat.get('id')}",
+        "",
+        "=== Transcript complet ===",
+        "",
+    ]
+    for m in chat.get("messages") or []:
+        role = m.get("role")
+        content = (m.get("content") or "").strip()
+        if not content or role not in ("user", "assistant"):
+            continue
+        label = "Patient" if role == "user" else "Asclepios"
+        when = m.get("created_at") or ""
+        prefix = f"[{when}] " if when else ""
+        lines.append(f"{prefix}{label} :\n{content}\n")
+    return "\n".join(lines)
+
+
+@app.post("/api/chats/{chat_id}/generate-report")
+async def generate_report_from_chat(chat_id: str):
+    """Génère (ou régénère) un rapport MD depuis toute la conversation, lie chat↔rapport."""
+    chat = _load_chat(chat_id)
+    msgs = [
+        m
+        for m in (chat.get("messages") or [])
+        if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
+    ]
+    if len(msgs) < 1:
+        raise HTTPException(status_code=400, detail="Conversation vide")
+
+    async def stream() -> AsyncGenerator[bytes, None]:
+        existing_id = chat.get("report_id")
+        regenerating = bool(existing_id)
+
+        yield (
+            "data: "
+            + ("Régénération du rapport lié…" if regenerating else "Génération du rapport depuis la conversation…")
+            + "\n\n"
+        ).encode()
+
+        source = _conversation_as_source(chat)
+        try:
+            markdown = await _call_ai(source)
         except Exception as exc:
-            yield f"data: \u2717 Erreur : {exc}\n\n".encode()
+            yield f"data: Erreur IA : {exc}\n\n".encode()
             yield b"data: [ERROR]\n\n"
             return
+
+        if not markdown.strip():
+            yield "data: Erreur : réponse vide.\n\n".encode()
+            yield b"data: [ERROR]\n\n"
+            return
+
+        # Même fichier si déjà lié ; sinon nouveau
+        if regenerating and existing_id:
+            report_id = re.sub(r"[^a-zA-Z0-9_\-]", "", existing_id)
+            filename = f"{report_id}.md"
+            filepath = _DIR_A / filename
+        else:
+            m = re.search(r"^#\s+(.+)", markdown, re.MULTILINE)
+            title = m.group(1).strip() if m else (chat.get("title") or "conversation")
+            filename = f"{date.today().strftime('%Y-%m-%d')}-{_slugify(title)}.md"
+            filepath = _DIR_A / filename
+            # Éviter collision accidentelle
+            if filepath.exists():
+                stem = filename[:-3]
+                filename = f"{stem}-{uuid.uuid4().hex[:4]}.md"
+                filepath = _DIR_A / filename
+            report_id = filename[:-3]
+
+        try:
+            filepath.write_text(markdown, encoding="utf-8")
+            yield (
+                "data: \u2713 Rapport "
+                + ("écrasé" if regenerating else "créé")
+                + f" : {filename}\n\n"
+            ).encode()
+        except Exception as exc:
+            yield f"data: Erreur écriture : {exc}\n\n".encode()
+            yield b"data: [ERROR]\n\n"
+            return
+
+        # Lier conversation ↔ rapport
+        chat["report_id"] = report_id
+        chat["updated_at"] = _now_iso()
+        try:
+            _save_chat(chat)
+            yield "data: \u2713 Conversation liée au rapport (suppression désactivée)\n\n".encode()
+        except Exception as exc:
+            yield f"data: Erreur liaison : {exc}\n\n".encode()
+            yield b"data: [ERROR]\n\n"
+            return
+
         async for chunk in _stream_cmd("Sync", [PYTHON, str(_SCRIPT_SYNC), "push"]):
             yield chunk
+
+        yield f"data: REPORT:{report_id}\n\n".encode()
         yield b"data: [DONE]\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
@@ -1061,6 +1219,7 @@ async def chat_with_asclepios(body: ChatRequest):
                     "created_at": now,
                     "updated_at": now,
                     "messages": [],
+                    "report_id": None,
                 }
                 _save_chat(chat)
         except HTTPException:
@@ -1073,6 +1232,8 @@ async def chat_with_asclepios(body: ChatRequest):
             return
 
         yield f"data: CONVERSATION:{chat['id']}\n\n".encode()
+        if chat.get("report_id"):
+            yield f"data: REPORT:{chat['report_id']}\n\n".encode()
 
         # Historique avant le nouveau message
         history = list(chat.get("messages") or [])
@@ -1088,6 +1249,8 @@ async def chat_with_asclepios(body: ChatRequest):
         if chat.get("title") in (None, "", "Nouvelle conversation"):
             chat["title"] = _title_from_message(body.message)
         chat["updated_at"] = _now_iso()
+        if "report_id" not in chat:
+            chat["report_id"] = None
         try:
             _save_chat(chat)
             yield "data: Message utilisateur enregistré\n\n".encode()

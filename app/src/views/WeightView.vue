@@ -181,9 +181,8 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
         <div class="flex flex-wrap items-center gap-2">
           <AddWeightDialog @added="onWeightAdded" />
           <PdfButton
-            pdf-url="/data/pdf-generes/compte-rendu/compte_rendu_poids_toutes_les_donnees_(depuis_le_debut).pdf"
-            generate-endpoint="/pdf/generate/poids"
-            label="Compte-rendu PDF"
+            download-endpoint="/pdf/download/poids"
+            label="Télécharger le PDF"
           />
         </div>
       </div>
