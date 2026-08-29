@@ -1,0 +1,11 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+boto3
+cryptography
+python-dotenv
+reportlab
+matplotlib
+Pillow
+pdfplumber
+cursor-sdk
+httpx

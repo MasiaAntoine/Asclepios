@@ -1,0 +1,10 @@
+app/node_modules
+app/dist
+app/.vite
+**/.DS_Store
+**/*.log
+brand/
+scripts/
+requirements.txt
+# Never send clinical data into the Docker build context
+data/

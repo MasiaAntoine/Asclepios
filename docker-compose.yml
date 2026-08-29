@@ -1,0 +1,68 @@
+services:
+
+  # ── Production ──────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+    profiles: [prod]
+
+  # ── API Python (PDF + OVH sync) ─────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      # Code de l'API (rechargeable sans rebuild)
+      - ./api:/workspace/api:ro
+      # Scripts Python (générateurs PDF + sync OVH)
+      - ./scripts:/workspace/scripts:ro
+      - ./data:/workspace/data
+      # Données privées
+      - ./.env:/workspace/.env:ro
+      - ./brand:/workspace/brand:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    profiles: [prod, dev]
+
+  # ── Development (hot-reload) ─────────────────────────────────────────────────
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./app/src:/workspace/app/src
+      - ./app/index.html:/workspace/app/index.html
+      - ./app/vite.config.ts:/workspace/app/vite.config.ts
+      - ./app/vite.privateData.ts:/workspace/app/vite.privateData.ts
+      - ./app/tsconfig.app.json:/workspace/app/tsconfig.app.json
+      - ./app/tsconfig.node.json:/workspace/app/tsconfig.node.json
+      - ./app/package.json:/workspace/app/package.json
+      - ./app/package-lock.json:/workspace/app/package-lock.json
+      - ./data:/workspace/data:ro
+      - app_node_modules:/workspace/app/node_modules
+    environment:
+      - NODE_ENV=development
+      # Cible API depuis le conteneur vite (hostname Docker interne)
+      - API_TARGET=http://api:8001
+    depends_on:
+      - api
+    restart: unless-stopped
+    profiles: [dev]
+
+volumes:
+  app_node_modules:
