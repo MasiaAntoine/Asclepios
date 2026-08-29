@@ -60,6 +60,11 @@ async function load() {
   }
 }
 
+export async function reloadPoids() {
+  loaded = false
+  return load()
+}
+
 export function usePoids() {
   if (!loaded && !loading.value) void load()
 
@@ -100,5 +105,6 @@ export function usePoids() {
     loading,
     error,
     load,
+    reload: reloadPoids,
   }
 }

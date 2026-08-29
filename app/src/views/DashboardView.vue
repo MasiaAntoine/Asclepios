@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
 import { useReports } from '@/composables/useReports'
@@ -7,23 +7,18 @@ import { usePoids } from '@/composables/usePoids'
 import { useLabs } from '@/composables/useLabs'
 import { useMedications } from '@/composables/useMedications'
 import { useMedicationSeries } from '@/composables/useMedicationSeries'
-import { useSseStream } from '@/composables/usePdfApi'
 import {
   Activity,
   ArrowRight,
   BookOpen,
   Cloud,
   FileText,
-  Loader,
   Pill,
   Scale,
-  Terminal,
   TrendingDown,
   TrendingUp,
   UserRound,
-  X,
 } from '@lucide/vue'
-import Mascotte from '@/components/Mascotte.vue'
 
 const router = useRouter()
 
@@ -84,22 +79,6 @@ function formatReportDate(dateStr: string) {
 function go(path: string) {
   router.push(path)
 }
-
-// ── Pipeline sync ──────────────────────────────────────────────────────────
-const { lines: syncLines, running: syncRunning, done: syncDone, error: syncError, run: runPipeline, cancel: cancelPipeline } = useSseStream()
-const showSyncPanel = ref(false)
-const terminalEl = ref<HTMLElement | null>(null)
-
-async function startPipeline() {
-  showSyncPanel.value = true
-  await runPipeline('/pipeline/run')
-}
-
-function scrollToBottom() {
-  if (terminalEl.value) {
-    terminalEl.value.scrollTop = terminalEl.value.scrollHeight
-  }
-}
 </script>
 
 <template>
@@ -122,15 +101,11 @@ function scrollToBottom() {
       </div>
 
       <div v-else class="mx-auto max-w-6xl space-y-8">
-        <!-- ── Bannière de bienvenue avec mascotte ── -->
-        <div class="relative overflow-visible rounded-2xl bg-gradient-to-br from-[var(--primary)] to-[oklch(0.52_0.14_165)] px-6 pt-6 pb-24 text-white shadow-md">
+        <!-- ── Bannière de bienvenue ── -->
+        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--primary)] to-[oklch(0.52_0.14_165)] p-6 text-white shadow-md">
           <!-- Cercles décoratifs -->
           <div class="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-white/10"/>
-          <div class="pointer-events-none absolute bottom-0 right-24 h-32 w-32 rounded-full bg-white/8"/>
-          <!-- Mascotte ancrée en bas à droite de la card -->
-          <div class="pointer-events-none absolute bottom-0 right-4 z-10 hidden sm:block">
-            <Mascotte pose="waving" class="h-72 w-auto drop-shadow-2xl"/>
-          </div>
+          <div class="pointer-events-none absolute -bottom-12 right-24 h-32 w-32 rounded-full bg-white/8"/>
           <!-- Texte -->
           <div class="relative z-10 max-w-sm">
             <p class="text-xs font-semibold uppercase tracking-widest text-white/70">Asclepios</p>
@@ -408,76 +383,26 @@ function scrollToBottom() {
         </div>
 
         <!-- ── Synchronisation OVH ─────────────────────────────────────── -->
+        <!-- Sync / PDF → Paramètres -->
         <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div class="flex items-center gap-2">
                 <Cloud :size="16" class="text-[var(--primary)]" />
-                <h2 class="text-sm font-semibold text-[var(--foreground)]">Générer les PDFs et synchroniser OVH</h2>
+                <h2 class="text-sm font-semibold text-[var(--foreground)]">PDF & synchronisation OVH</h2>
               </div>
               <p class="mt-1 text-xs text-[var(--muted-foreground)]">
-                Génère tous les comptes-rendus PDF puis pousse les données chiffrées vers OVH Object Storage.
+                Pipeline complet, push / pull et statut de configuration.
               </p>
             </div>
-            <div class="flex shrink-0 flex-wrap gap-2">
-              <button
-                v-if="!syncRunning"
-                type="button"
-                class="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] shadow-sm transition hover:opacity-90"
-                @click="startPipeline"
-              >
-                <Terminal :size="15" />
-                Lancer le pipeline
-              </button>
-              <button
-                v-else
-                type="button"
-                class="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100"
-                @click="cancelPipeline"
-              >
-                <X :size="15" />
-                Annuler
-              </button>
-              <button
-                v-if="showSyncPanel && !syncRunning"
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--muted-foreground)] transition hover:bg-[var(--accent)]"
-                @click="showSyncPanel = false"
-              >
-                <X :size="14" />
-                Fermer
-              </button>
-            </div>
-          </div>
-
-          <!-- Terminal live -->
-          <div
-            v-if="showSyncPanel"
-            ref="terminalEl"
-            class="mt-4 max-h-72 overflow-y-auto rounded-xl border border-[var(--border)] bg-[oklch(0.12_0.02_165)] p-4 font-mono text-[11.5px] leading-5 text-slate-200 shadow-inner"
-            @vue:updated="scrollToBottom"
-          >
-            <p v-if="!syncLines.length" class="text-slate-500">En attente…</p>
-            <p
-              v-for="(line, i) in syncLines"
-              :key="i"
-              :class="[
-                line.startsWith('✗') ? 'text-red-400' :
-                line.startsWith('✓') ? 'text-emerald-400' :
-                line.startsWith('▶') ? 'text-[var(--primary)] font-semibold' :
-                line.startsWith('↑') ? 'text-sky-400' :
-                line.startsWith('×') ? 'text-amber-400' :
-                line.startsWith('🚀') ? 'text-[var(--primary)] font-bold' :
-                line.startsWith('🏁') ? 'text-emerald-400 font-bold' :
-                'text-slate-300'
-              ]"
-            >{{ line }}</p>
-            <p v-if="syncRunning" class="mt-1 flex items-center gap-1.5 text-slate-400">
-              <Loader :size="12" class="animate-spin" />
-              <span>En cours…</span>
-            </p>
-            <p v-if="syncDone && !syncError" class="mt-1 font-semibold text-emerald-400">🏁 Pipeline terminé avec succès.</p>
-            <p v-if="syncError" class="mt-1 font-semibold text-red-400">✗ {{ syncError }}</p>
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] shadow-sm transition hover:opacity-90"
+              @click="go('/settings')"
+            >
+              Ouvrir les paramètres
+              <ArrowRight :size="14" />
+            </button>
           </div>
         </section>
       </div>

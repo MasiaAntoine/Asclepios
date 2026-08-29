@@ -22,7 +22,7 @@ import DateRangeFilter from '@/components/DateRangeFilter.vue'
 import { baseChartOptions, chartColors, formatFrDate } from '@/lib/chartTheme'
 import { Scale, TrendingDown, TrendingUp, Ruler, Activity } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
-import Mascotte from '@/components/Mascotte.vue'
+import AddWeightDialog from '@/components/AddWeightDialog.vue'
 
 ChartJS.register(
   CategoryScale,
@@ -36,7 +36,11 @@ ChartJS.register(
   TimeScale,
 )
 
-const { entries, tailleCm, loading, error } = usePoids()
+const { entries, tailleCm, loading, error, reload } = usePoids()
+
+async function onWeightAdded() {
+  await reload()
+}
 
 const lastDate = computed(() =>
   entries.value.length ? entries.value[entries.value.length - 1].dateObj : null,
@@ -174,11 +178,14 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
             </template>
           </p>
         </div>
-        <PdfButton
-          pdf-url="/data/pdf-generes/compte-rendu/compte_rendu_poids_toutes_les_donnees_(depuis_le_debut).pdf"
-          generate-endpoint="/pdf/generate/poids"
-          label="Compte-rendu PDF"
-        />
+        <div class="flex flex-wrap items-center gap-2">
+          <AddWeightDialog @added="onWeightAdded" />
+          <PdfButton
+            pdf-url="/data/pdf-generes/compte-rendu/compte_rendu_poids_toutes_les_donnees_(depuis_le_debut).pdf"
+            generate-endpoint="/pdf/generate/poids"
+            label="Compte-rendu PDF"
+          />
+        </div>
       </div>
     </div>
 
@@ -262,12 +269,7 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
         </div>
 
         <!-- Table -->
-        <div class="relative">
-          <!-- Mascotte haut-droite de la card -->
-          <div class="pointer-events-none absolute -top-14 right-4 z-10 hidden sm:block">
-            <Mascotte pose="wink" class="h-52 w-auto drop-shadow-lg"/>
-          </div>
-          <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
           <div class="border-b border-[var(--border)] px-5 py-3">
             <h2 class="text-sm font-semibold">Historique des mesures</h2>
           </div>
@@ -302,8 +304,7 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
               </tbody>
             </table>
           </div>
-        </div><!-- inner overflow-hidden card -->
-        </div><!-- relative wrapper -->
+        </div>
         </template>
       </div>
     </div>

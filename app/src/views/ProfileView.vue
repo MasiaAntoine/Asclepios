@@ -12,7 +12,7 @@ import {
   User,
   Users,
 } from '@lucide/vue'
-import Mascotte from '@/components/Mascotte.vue'
+import EditProfileDialog from '@/components/EditProfileDialog.vue'
 
 const {
   profil,
@@ -26,7 +26,12 @@ const {
   traitementsMisAJour,
   loading,
   error,
+  reload,
 } = useProfile()
+
+async function onProfileSaved() {
+  await reload()
+}
 
 const photoFailed = ref(false)
 
@@ -63,10 +68,15 @@ function eventClass(e: string) {
   <div class="flex h-full flex-col overflow-hidden">
     <!-- Header -->
     <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-6">
-      <h1 class="text-2xl font-bold text-[var(--foreground)]">Profil patient</h1>
-      <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-        Identité, constantes et traitements en cours
-      </p>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-[var(--foreground)]">Profil patient</h1>
+          <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
+            Identité, constantes et traitements en cours
+          </p>
+        </div>
+        <EditProfileDialog v-if="profil" :profil="profil" @saved="onProfileSaved" />
+      </div>
     </div>
 
     <div class="flex-1 overflow-y-auto px-8 py-8">
@@ -78,11 +88,7 @@ function eventClass(e: string) {
       </div>
       <div v-else-if="profil" class="mx-auto max-w-5xl space-y-8">
         <!-- Hero identity -->
-        <section class="relative flex flex-col gap-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 pb-16 sm:flex-row sm:items-center">
-          <!-- Mascotte décalée bas-droite -->
-          <div class="pointer-events-none absolute -bottom-14 right-4 z-10 hidden sm:block">
-            <Mascotte pose="waving" class="h-52 w-auto drop-shadow-lg"/>
-          </div>
+        <section class="flex flex-col gap-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 sm:flex-row sm:items-center">
           <div class="relative h-28 w-28 shrink-0 overflow-hidden rounded-2xl bg-[var(--accent)] shadow-sm ring-1 ring-[var(--border)]">
             <img
               v-if="!photoFailed"

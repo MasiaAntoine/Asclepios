@@ -26,7 +26,6 @@ import { baseChartOptions, chartColors, formatFrDate } from '@/lib/chartTheme'
 import { Activity, AlertTriangle, FlaskConical, Pill, TrendingDown, TrendingUp } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
 import AddSuiviEntryDialog from '@/components/AddSuiviEntryDialog.vue'
-import Mascotte from '@/components/Mascotte.vue'
 
 ChartJS.register(
   CategoryScale,
@@ -529,12 +528,7 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
               <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">Aucune donnée sur cette période</p>
             </div>
 
-            <div v-if="linkedTreatment" class="relative">
-              <!-- Mascotte haut-droite -->
-              <div class="pointer-events-none absolute -top-14 right-4 z-10 hidden sm:block">
-                <Mascotte pose="stethoscope" class="h-52 w-auto drop-shadow-lg"/>
-              </div>
-              <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+            <div v-if="linkedTreatment" class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
               <div class="border-b border-[var(--border)] px-5 py-3">
                 <h2 class="flex items-center gap-2 text-sm font-semibold">
                   <Pill :size="14" class="text-[var(--primary)]" /> Historique du traitement
@@ -568,8 +562,7 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
                   </tbody>
                 </table>
               </div>
-              </div><!-- inner overflow-hidden -->
-            </div><!-- relative wrapper -->
+            </div>
 
             <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
               <div class="border-b border-[var(--border)] px-5 py-3">
@@ -725,12 +718,7 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
               <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">Aucune donnée sur cette période</p>
             </div>
 
-            <div class="relative">
-              <!-- Mascotte haut-droite -->
-              <div class="pointer-events-none absolute -top-14 right-4 z-10 hidden sm:block">
-                <Mascotte pose="reading" class="h-52 w-auto drop-shadow-lg"/>
-              </div>
-              <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+            <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
               <div class="border-b border-[var(--border)] px-5 py-3">
                 <h2 class="flex items-center gap-2 text-sm font-semibold">
                   <Pill :size="14" class="text-[var(--primary)]" /> Historique
@@ -766,8 +754,7 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
                   </tbody>
                 </table>
               </div>
-              </div><!-- inner overflow-hidden -->
-            </div><!-- relative wrapper -->
+            </div>
           </template>
         </template>
 

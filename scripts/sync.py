@@ -36,6 +36,7 @@ CANONICAL_DIRS = (
     "medicaments",
     "rapports",
     "traumas",
+    "chats",
     "scripts",
 )
 

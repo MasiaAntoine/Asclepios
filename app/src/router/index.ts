@@ -51,6 +51,16 @@ const router = createRouter({
       name: 'doctors',
       component: () => import('@/views/DoctorsView.vue'),
     },
+    {
+      path: '/assistant',
+      name: 'chat',
+      component: () => import('@/views/ChatView.vue'),
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/views/SettingsView.vue'),
+    },
   ],
 })
 

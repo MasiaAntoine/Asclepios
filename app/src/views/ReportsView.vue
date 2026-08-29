@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { useReports } from '@/composables/useReports'
 import GenerateReportDialog from '@/components/GenerateReportDialog.vue'
 import { Calendar, FileText, Search, Tag } from '@lucide/vue'
-import Mascotte from '@/components/Mascotte.vue'
 
 const router = useRouter()
 const { reports, loading, error, reload } = useReports()
@@ -99,7 +98,6 @@ function formatGroupLabel(key: string) {
 
       <!-- Empty state -->
       <div v-else-if="filteredReports.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
-        <Mascotte pose="reading" class="mb-2 h-56 w-auto opacity-90"/>
         <p class="text-base font-medium text-[var(--foreground)]">Aucun rapport trouvé</p>
         <p class="mt-1 text-sm text-[var(--muted-foreground)]">Essayez de modifier votre recherche ou générez-en un avec l'IA.</p>
       </div>

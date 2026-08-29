@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import logoIconUrl from '@/assets/logo-icon.png'
-import { Activity, BookOpen, FileText, LayoutDashboard, Scale, Settings, Stethoscope, UserRound } from '@lucide/vue'
+import { Activity, BookOpen, FileText, LayoutDashboard, MessageSquare, Scale, Settings, Stethoscope, UserRound } from '@lucide/vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,6 +12,12 @@ const navItems = [
     icon: LayoutDashboard,
     to: '/',
     name: 'dashboard',
+  },
+  {
+    label: 'Assistant',
+    icon: MessageSquare,
+    to: '/assistant',
+    name: 'chat',
   },
   {
     label: 'Profil',
@@ -54,7 +60,6 @@ const navItems = [
     icon: Settings,
     to: '/settings',
     name: 'settings',
-    disabled: true,
   },
 ]
 
@@ -62,7 +67,7 @@ const isActive = (to: string) =>
   to === '/' ? route.path === '/' : route.path.startsWith(to)
 
 function navigate(item: typeof navItems[0]) {
-  if (!item.disabled) router.push(item.to)
+  router.push(item.to)
 }
 </script>
 
@@ -89,11 +94,9 @@ function navigate(item: typeof navItems[0]) {
         @click="navigate(item)"
         :class="[
           'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-          isActive(item.to) && !item.disabled
+          isActive(item.to)
             ? 'bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm'
-            : item.disabled
-              ? 'cursor-not-allowed opacity-40 text-[var(--muted-foreground)]'
-              : 'text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
+            : 'text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
         ]"
       >
         <component
@@ -101,16 +104,10 @@ function navigate(item: typeof navItems[0]) {
           :size="18"
           :class="[
             'shrink-0 transition-transform group-hover:scale-105',
-            isActive(item.to) && !item.disabled ? 'text-[var(--primary-foreground)]' : '',
+            isActive(item.to) ? 'text-[var(--primary-foreground)]' : '',
           ]"
         />
         <span>{{ item.label }}</span>
-        <span
-          v-if="item.disabled"
-          class="ml-auto rounded-full bg-[var(--muted)] px-1.5 py-0.5 text-[10px] text-[var(--muted-foreground)]"
-        >
-          Bientôt
-        </span>
       </button>
     </nav>
 

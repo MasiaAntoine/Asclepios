@@ -144,6 +144,11 @@ async function load() {
   }
 }
 
+export async function reloadProfile() {
+  loaded = false
+  return load()
+}
+
 export function useProfile() {
   if (!loaded && !loading.value) void load()
 
@@ -188,6 +193,7 @@ export function useProfile() {
     loading,
     error,
     load,
+    reload: reloadProfile,
     currentDose,
     isActive,
   }

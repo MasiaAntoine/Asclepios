@@ -16,12 +16,19 @@ import {
   UserRound,
 } from '@lucide/vue'
 import { useDoctors, doctorFullName, doctorPhotoUrl, type Doctor } from '@/composables/useDoctors'
-import Mascotte from '@/components/Mascotte.vue'
+import DoctorEditDialog from '@/components/DoctorEditDialog.vue'
 
-const { doctors, loading, error } = useDoctors()
+const { doctors, loading, error, reload } = useDoctors()
 
 const selected = ref<Doctor | null>(null)
 const photoFailed = ref<Record<string, boolean>>({})
+
+async function onDoctorsChanged() {
+  await reload()
+  if (selected.value) {
+    selected.value = doctors.value.find((d) => d.id === selected.value?.id) ?? null
+  }
+}
 
 function initials(doctor: Doctor) {
   return `${doctor.prenom[0] ?? ''}${doctor.nom[0] ?? ''}`.toUpperCase()
@@ -37,15 +44,16 @@ function selectDoctor(doctor: Doctor) {
   <div class="flex h-full flex-col overflow-hidden">
     <!-- Header -->
     <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-6">
-      <h1 class="text-2xl font-bold text-[var(--foreground)]">Équipe médicale</h1>
-      <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-        {{ doctors.length }} praticien{{ doctors.length > 1 ? 's' : '' }} dans votre suivi
-      </p>
-      <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
-    </div>
-    <!-- Mascotte fixée en bas-gauche de la fenêtre (après la sidebar ~72px) -->
-    <div class="pointer-events-none fixed bottom-4 left-20 z-20 hidden lg:block">
-      <Mascotte pose="stethoscope" class="h-52 w-auto drop-shadow-xl"/>
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-[var(--foreground)]">Équipe médicale</h1>
+          <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
+            {{ doctors.length }} praticien{{ doctors.length > 1 ? 's' : '' }} dans votre suivi
+          </p>
+          <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
+        </div>
+        <DoctorEditDialog mode="create" @saved="onDoctorsChanged" />
+      </div>
     </div>
 
     <!-- Content -->
@@ -172,6 +180,12 @@ function selectDoctor(doctor: Doctor) {
               </div>
 
               <div class="flex flex-col gap-2">
+                <DoctorEditDialog
+                  mode="edit"
+                  :doctor="selected"
+                  @saved="onDoctorsChanged"
+                  @deleted="() => { selected = null; onDoctorsChanged() }"
+                />
                 <a
                   v-if="selected.doctolib"
                   :href="selected.doctolib"
