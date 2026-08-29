@@ -19,9 +19,9 @@ import uuid
 from urllib.parse import quote
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
@@ -48,6 +48,8 @@ _SCRIPT_BIO    = SCRIPTS_DIR / "rapport_thyroide.py"
 _SCRIPT_BIO2   = SCRIPTS_DIR / "rapport_thyroide_levothyrox.py"
 _SCRIPT_RX     = SCRIPTS_DIR / "rapport_traitements.py"
 _SCRIPT_SYNC   = PROJECT_SCRIPTS_DIR / "sync.py"
+_SCRIPT_PARSE_LAB = SCRIPTS_DIR / "parse_lab_pdf.py"
+_PDS_DIR = DATA_DIR / "prise-de-sang"
 
 # ── Fichier template IA (chargé une fois au démarrage) ──────────────────────
 
@@ -166,6 +168,36 @@ def _resolve_md_doc(report_id: str) -> Path:
 # ── Endpoints PDF (génération à la volée) ───────────────────────────────────
 
 
+def _pdf_period_args(
+    date_from: str | None,
+    date_to: str | None,
+) -> list[str]:
+    args: list[str] = []
+    if date_from:
+        args.extend(["--from", date_from])
+    if date_to:
+        args.extend(["--to", date_to])
+    return args
+
+
+def _period_name_suffix(date_from: str | None, date_to: str | None) -> str:
+    """Suffixe de fichier : `_2026-02-28_au_2026-08-30` ou `_tout`."""
+    if date_from and date_to:
+        return f"_{date_from}_au_{date_to}"
+    if date_from:
+        return f"_depuis_{date_from}"
+    if date_to:
+        return f"_jusquau_{date_to}"
+    return "_tout"
+
+
+def _with_period_stem(name: str, date_from: str | None, date_to: str | None) -> str:
+    """Insère le suffixe période avant l’extension (pdf/zip)."""
+    path = Path(name)
+    suffix = _period_name_suffix(date_from, date_to)
+    return f"{path.stem}{suffix}{path.suffix}"
+
+
 @app.get("/api/pdf/download/report/{report_id}")
 async def download_report_pdf(report_id: str):
     """Génère le PDF d'un rapport/trauma et le renvoie en téléchargement."""
@@ -182,61 +214,90 @@ async def download_report_pdf(report_id: str):
 
 
 @app.get("/api/pdf/download/poids")
-async def download_poids_pdf():
-    """Génère le compte-rendu poids et le renvoie en téléchargement."""
+async def download_poids_pdf(
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+):
+    """Génère le compte-rendu poids (période optionnelle) et le renvoie."""
+    download_name = _with_period_stem(
+        "compte_rendu_poids.pdf", date_from, date_to
+    )
     with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
-        out = Path(td) / "compte_rendu_poids.pdf"
-        await _run_cmd(
-            [
-                PYTHON,
-                str(_SCRIPT_WEIGHT),
-                "--periode",
-                "tout",
-                "--output",
-                str(out),
-                "--no-push",
-            ]
-        )
+        out = Path(td) / download_name
+        cmd = [
+            PYTHON,
+            str(_SCRIPT_WEIGHT),
+            "--output",
+            str(out),
+            "--no-push",
+            *_pdf_period_args(date_from, date_to),
+        ]
+        if not date_from and not date_to:
+            cmd.extend(["--periode", "tout"])
+        await _run_cmd(cmd)
         if not out.exists():
             raise HTTPException(status_code=500, detail="PDF non généré")
         return _attachment_response(
-            out.read_bytes(), "compte_rendu_poids.pdf", "application/pdf"
+            out.read_bytes(), download_name, "application/pdf"
         )
 
 
 @app.get("/api/pdf/download/labs")
-async def download_labs_pdf():
+async def download_labs_pdf(
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+):
     """Génère les PDF labos (thyroïde + comparaison) et renvoie un ZIP."""
+    period = _pdf_period_args(date_from, date_to)
     with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
         tdir = Path(td)
         out1 = tdir / "compte_rendu_thyroide.pdf"
         out2 = tdir / "comparaison_tsh_levothyrox.pdf"
         await _run_cmd(
-            [PYTHON, str(_SCRIPT_BIO), "--output", str(out1), "--no-push"]
+            [PYTHON, str(_SCRIPT_BIO), "--output", str(out1), "--no-push", *period]
         )
         await _run_cmd(
-            [PYTHON, str(_SCRIPT_BIO2), "--output", str(out2), "--no-push"]
+            [PYTHON, str(_SCRIPT_BIO2), "--output", str(out2), "--no-push", *period]
         )
         files: list[tuple[str, bytes]] = []
         for path in (out1, out2):
             if path.exists():
-                files.append((path.name, path.read_bytes()))
+                files.append(
+                    (
+                        _with_period_stem(path.name, date_from, date_to),
+                        path.read_bytes(),
+                    )
+                )
         if not files:
             raise HTTPException(status_code=500, detail="PDF non générés")
         if len(files) == 1:
             name, data = files[0]
             return _attachment_response(data, name, "application/pdf")
+        zip_name = _with_period_stem(
+            "comptes_rendus_labs.zip", date_from, date_to
+        )
         return _attachment_response(
-            _zip_bytes(files), "comptes_rendus_labs.zip", "application/zip"
+            _zip_bytes(files), zip_name, "application/zip"
         )
 
 
 @app.get("/api/pdf/download/traitements")
-async def download_traitements_pdf(filtre: str | None = Query(default=None)):
+async def download_traitements_pdf(
+    filtre: str | None = Query(default=None),
+    date_from: str | None = Query(default=None),
+    date_to: str | None = Query(default=None),
+):
     """Génère le(s) PDF traitement(s) ; un PDF ou un ZIP selon le nombre."""
     with tempfile.TemporaryDirectory(prefix="asclepios-pdf-") as td:
         outdir = Path(td)
-        cmd = [PYTHON, str(_SCRIPT_RX), "--outdir", str(outdir), "--no-push"]
+        cmd = [
+            PYTHON,
+            str(_SCRIPT_RX),
+            "--outdir",
+            str(outdir),
+            "--no-push",
+            *_pdf_period_args(date_from, date_to),
+        ]
         if filtre:
             cmd.append(filtre)
         await _run_cmd(cmd)
@@ -245,10 +306,19 @@ async def download_traitements_pdf(filtre: str | None = Query(default=None)):
             raise HTTPException(status_code=500, detail="PDF non générés")
         if len(pdfs) == 1:
             p = pdfs[0]
-            return _attachment_response(p.read_bytes(), p.name, "application/pdf")
+            name = _with_period_stem(p.name, date_from, date_to)
+            return _attachment_response(p.read_bytes(), name, "application/pdf")
+        zip_base = (
+            f"traitement_{filtre}.zip" if filtre else "traitements.pdf.zip"
+        )
         return _attachment_response(
-            _zip_bytes([(p.name, p.read_bytes()) for p in pdfs]),
-            "traitements.pdf.zip" if not filtre else f"traitement_{filtre}.zip",
+            _zip_bytes(
+                [
+                    (_with_period_stem(p.name, date_from, date_to), p.read_bytes())
+                    for p in pdfs
+                ]
+            ),
+            _with_period_stem(zip_base, date_from, date_to),
             "application/zip",
         )
 
@@ -379,6 +449,110 @@ class TreatmentEntryRequest(BaseModel):
     posologie: str
     evenement: str
     note: str = ""
+
+
+def _load_parse_lab():
+    """Charge le module parse_lab_pdf depuis data/scripts."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("parse_lab_pdf", _SCRIPT_PARSE_LAB)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("parse_lab_pdf.py introuvable")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@app.get("/api/labs/pdfs")
+def list_lab_pdfs() -> dict:
+    """Liste les PDF de prise de sang."""
+    try:
+        mod = _load_parse_lab()
+        items = mod.list_lab_pdfs(_PDS_DIR)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"items": items}
+
+
+@app.get("/api/labs/pdfs/{pdf_id}")
+def get_lab_pdf_detail(pdf_id: str, force: bool = False) -> dict:
+    """Détail parsé d'un PDF de prise de sang (cache JSON)."""
+    try:
+        mod = _load_parse_lab()
+        path = mod.resolve_pdf(pdf_id, _PDS_DIR)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF introuvable") from None
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        data = mod.parse_with_cache(path, force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Parsing impossible : {exc}") from exc
+
+    # Navigation prev/next
+    items = mod.list_lab_pdfs(_PDS_DIR)
+    ids = [i["id"] for i in items]
+    idx = ids.index(path.stem) if path.stem in ids else -1
+    data["navigation"] = {
+        "prev_id": ids[idx + 1] if 0 <= idx < len(ids) - 1 else None,  # older (list is desc)
+        "next_id": ids[idx - 1] if idx > 0 else None,  # newer
+        "index": idx,
+        "total": len(ids),
+    }
+    data["id"] = path.stem
+    return data
+
+
+@app.get("/api/labs/pdfs/{pdf_id}/file")
+def download_lab_pdf_file(pdf_id: str):
+    """Télécharge le PDF source."""
+    try:
+        mod = _load_parse_lab()
+        path = mod.resolve_pdf(pdf_id, _PDS_DIR)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF introuvable") from None
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/labs/pdfs/upload")
+async def upload_lab_pdf(file: UploadFile = File(...)):
+    """Enregistre un PDF de prise de sang, le normalise, puis push OVH."""
+    filename = file.filename or "upload.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Seuls les fichiers PDF sont acceptés")
+
+    raw = await file.read()
+    if not raw or len(raw) < 100:
+        raise HTTPException(status_code=400, detail="Fichier PDF vide ou invalide")
+    if len(raw) > 40 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="PDF trop volumineux (max 40 Mo)")
+
+    try:
+        mod = _load_parse_lab()
+        final_path = mod.save_uploaded_pdf(raw, filename, _PDS_DIR)
+        final_id = final_path.stem
+        try:
+            mod.parse_with_cache(final_path, force=True)
+        except Exception:
+            pass
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Enregistrement impossible : {exc}") from exc
+
+    async def stream() -> AsyncGenerator[bytes, None]:
+        yield f"data: \u2713 PDF enregistré : {final_path.name}\n\n".encode()
+        yield f"data: ID:{final_id}\n\n".encode()
+        yield "data: Push OVH (nouveaux / modifiés uniquement)…\n\n".encode()
+        async for chunk in _push_stream():
+            yield chunk
+        yield b"data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @app.post("/api/labs/add")

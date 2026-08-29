@@ -37,6 +37,16 @@ const router = createRouter({
     { path: '/labs', redirect: { name: 'suivi', query: { tab: 'labs' } } },
     { path: '/rx', redirect: { name: 'suivi', query: { tab: 'rx' } } },
     {
+      path: '/prise-de-sang',
+      name: 'prise-de-sang',
+      component: () => import('@/views/PriseDeSangView.vue'),
+    },
+    {
+      path: '/prise-de-sang/:id',
+      name: 'prise-de-sang-detail',
+      component: () => import('@/views/PriseDeSangDetailView.vue'),
+    },
+    {
       path: '/meds',
       name: 'meds',
       component: () => import('@/views/MedsView.vue'),

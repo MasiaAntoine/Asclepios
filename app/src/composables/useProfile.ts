@@ -16,12 +16,62 @@ export interface Animal {
   date_naissance?: string
 }
 
+export interface CarteVitaleVerso {
+  periode: string
+  type: string
+  fabricant: string
+  numero: string
+  indice?: string
+}
+
+export interface SecuriteSociale {
+  nir: string
+  carte_vitale_emise_le?: string
+  carte_vitale_verso?: CarteVitaleVerso
+}
+
+export interface MutuelleValidite {
+  debut: string
+  fin: string
+}
+
+export interface MutuelleContact {
+  email?: string
+  telephone?: string
+  fax?: string
+  site?: string
+  viamedis_tel?: string
+  viamedis_pec?: string
+  espace_ps?: string
+}
+
+export interface Mutuelle {
+  organisme: string
+  unite_gestion?: string
+  adresse?: string
+  numero_amc?: string
+  numero_adherent?: string
+  type_convention?: string
+  roc?: string
+  numero_teletransmission?: string
+  reseau_tiers_payant?: string
+  validite?: MutuelleValidite
+  carte_imprimee_le?: string
+  contact?: MutuelleContact
+  garanties_tiers_payant?: Record<string, string>
+  document?: string
+  notice_md?: string
+  contrat_pdf?: string
+}
+
 export interface Profil {
   prenom: string
   nom: string
   date_naissance: string
   sexe: string
   taille_cm: number
+  securite_sociale?: SecuriteSociale
+  mutuelle?: Mutuelle
   tabac: {
     type: string
     debut: string

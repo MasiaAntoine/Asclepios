@@ -20,12 +20,13 @@ import 'chartjs-adapter-date-fns'
 import { fr } from 'date-fns/locale'
 import { useLabs } from '@/composables/useLabs'
 import { useMedicationSeries } from '@/composables/useMedicationSeries'
-import { useDateRange } from '@/composables/useDateRange'
+import { useDateRange, dateRangeQuery } from '@/composables/useDateRange'
 import DateRangeFilter from '@/components/DateRangeFilter.vue'
 import { baseChartOptions, chartColors, formatFrDate } from '@/lib/chartTheme'
 import { Activity, AlertTriangle, FlaskConical, Pill, TrendingDown, TrendingUp } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
 import AddSuiviEntryDialog from '@/components/AddSuiviEntryDialog.vue'
+import PageShell from '@/components/PageShell.vue'
 
 ChartJS.register(
   CategoryScale,
@@ -297,6 +298,13 @@ const {
   setPreset: medSetPreset,
 } = useDateRange(medLastDate)
 
+const labsPdfEndpoint = computed(
+  () => `/pdf/download/labs${dateRangeQuery(labsBounds.value)}`,
+)
+const traitementsPdfEndpoint = computed(
+  () => `/pdf/download/traitements${dateRangeQuery(medBounds.value)}`,
+)
+
 const filteredMedDoses = computed(() => medDoses.value.filter((d) => medInRange(d.dateObj)))
 
 const medDoseInRange = computed(() => {
@@ -396,9 +404,8 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <!-- ── Header ──────────────────────────────────────────────────────────── -->
-    <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-5">
+  <PageShell max-width="lg">
+    <template #header>
       <div class="flex flex-wrap items-center justify-between gap-4">
         <!-- Tabs -->
         <div class="flex items-center gap-1 rounded-xl bg-[var(--muted)] p-1">
@@ -421,12 +428,12 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
         <div class="flex flex-wrap items-center gap-2">
           <PdfButton
             v-if="activeTab === 'labs'"
-            download-endpoint="/pdf/download/labs"
+            :download-endpoint="labsPdfEndpoint"
             label="Télécharger le PDF"
           />
           <PdfButton
             v-else
-            download-endpoint="/pdf/download/traitements"
+            :download-endpoint="traitementsPdfEndpoint"
             label="Télécharger le PDF"
           />
           <AddSuiviEntryDialog
@@ -449,12 +456,10 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
             @added="onRxEntryAdded"
           />
         </div>
-      </div><!-- end flex justify-between -->
-    </div><!-- end header -->
+      </div>
+    </template>
 
-    <!-- ── Content ────────────────────────────────────────────────────────── -->
-    <div class="flex-1 overflow-y-auto px-8 py-8">
-      <div class="mx-auto max-w-5xl space-y-6">
+    <div class="space-y-6">
 
         <!-- ════ LABS tab ════ -->
         <template v-if="activeTab === 'labs'">
@@ -758,7 +763,6 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
           </template>
         </template>
 
-      </div>
     </div>
-  </div>
+  </PageShell>
 </template>

@@ -5,6 +5,7 @@ import { marked, type Tokens } from 'marked'
 import { useMedications, type MedicationCard } from '@/composables/useMedications'
 import { ArrowLeft, BookOpen, ExternalLink, Pill } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
+import PageShell from '@/components/PageShell.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -85,8 +86,8 @@ const eventLabels: Record<string, string> = {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-5">
+  <PageShell max-width="sm">
+    <template #header>
       <div class="flex items-center gap-4">
         <button
           type="button"
@@ -120,18 +121,18 @@ const eventLabels: Record<string, string> = {
           Source officielle
         </a>
       </div>
-    </div>
+    </template>
 
     <div
       v-if="(listLoading || docLoading) && !med"
-      class="flex flex-1 items-center justify-center text-sm text-[var(--muted-foreground)]"
+      class="flex items-center justify-center py-24 text-sm text-[var(--muted-foreground)]"
     >
       Chargement…
     </div>
 
     <div
       v-else-if="!med"
-      class="flex flex-1 flex-col items-center justify-center gap-4 text-center"
+      class="flex flex-col items-center justify-center gap-4 py-24 text-center"
     >
       <div class="rounded-full bg-[var(--muted)] p-5">
         <Pill :size="32" class="text-[var(--muted-foreground)]" />
@@ -146,99 +147,97 @@ const eventLabels: Record<string, string> = {
       </button>
     </div>
 
-    <div v-else class="flex-1 overflow-y-auto">
-      <div class="mx-auto max-w-3xl space-y-8 px-8 py-8">
-        <!-- Summary -->
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-              Dose actuelle
-            </p>
-            <p class="mt-1 text-xl font-bold">{{ med.actuel?.dose ?? '—' }}</p>
-            <p class="text-xs text-[var(--muted-foreground)]">{{ med.actuel?.posologie }}</p>
-          </div>
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
-              Statut
-            </p>
-            <p class="mt-2">
-              <span
-                v-if="med.actif"
-                class="rounded-full bg-emerald-50 px-2.5 py-0.5 text-sm font-semibold text-emerald-800"
-              >
-                En cours
-              </span>
-              <span
-                v-else
-                class="rounded-full bg-red-50 px-2.5 py-0.5 text-sm font-semibold text-red-700"
-              >
-                Arrêté
-              </span>
-            </p>
-            <p class="mt-2 text-xs text-[var(--muted-foreground)]">
-              Dernier événement :
-              {{ eventLabels[med.actuel?.evenement ?? ''] ?? med.actuel?.evenement }}
-              · {{ med.actuel?.date }}
-            </p>
-          </div>
+    <div v-else class="space-y-8">
+      <!-- Summary -->
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+            Dose actuelle
+          </p>
+          <p class="mt-1 text-xl font-bold">{{ med.actuel?.dose ?? '—' }}</p>
+          <p class="text-xs text-[var(--muted-foreground)]">{{ med.actuel?.posologie }}</p>
         </div>
-
-        <!-- Dose history -->
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-          <div class="border-b border-[var(--border)] px-5 py-3">
-            <h2 class="text-sm font-semibold">Historique des doses</h2>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
-                <tr>
-                  <th class="px-5 py-3 font-medium">Date</th>
-                  <th class="px-5 py-3 font-medium">Dose</th>
-                  <th class="px-5 py-3 font-medium">Événement</th>
-                  <th class="px-5 py-3 font-medium">Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(h, i) in [...med.historique].reverse()"
-                  :key="h.date + h.dose + i"
-                  class="border-t border-[var(--border)]"
-                >
-                  <td class="px-5 py-2.5">{{ h.date }}</td>
-                  <td class="px-5 py-2.5 font-medium">{{ h.dose }}</td>
-                  <td class="px-5 py-2.5 capitalize">
-                    {{ eventLabels[h.evenement] ?? h.evenement }}
-                  </td>
-                  <td class="px-5 py-2.5 text-[var(--muted-foreground)] italic">
-                    {{ h.note || '—' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Markdown fiche -->
-        <div v-if="docLoading" class="py-8 text-center text-sm text-[var(--muted-foreground)]">
-          Chargement de la fiche…
-        </div>
-        <div v-else-if="docError" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {{ docError }}
-        </div>
-        <div v-else-if="doc" class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8">
-          <div class="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-            <BookOpen :size="13" />
-            Fiche
-          </div>
-          <article class="prose" v-html="renderedDoc" />
-        </div>
-        <div
-          v-else
-          class="rounded-xl border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--muted-foreground)]"
-        >
-          Pas de fiche documentaire associée
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+            Statut
+          </p>
+          <p class="mt-2">
+            <span
+              v-if="med.actif"
+              class="rounded-full bg-emerald-50 px-2.5 py-0.5 text-sm font-semibold text-emerald-800"
+            >
+              En cours
+            </span>
+            <span
+              v-else
+              class="rounded-full bg-red-50 px-2.5 py-0.5 text-sm font-semibold text-red-700"
+            >
+              Arrêté
+            </span>
+          </p>
+          <p class="mt-2 text-xs text-[var(--muted-foreground)]">
+            Dernier événement :
+            {{ eventLabels[med.actuel?.evenement ?? ''] ?? med.actuel?.evenement }}
+            · {{ med.actuel?.date }}
+          </p>
         </div>
       </div>
+
+      <!-- Dose history -->
+      <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="border-b border-[var(--border)] px-5 py-3">
+          <h2 class="text-sm font-semibold">Historique des doses</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
+              <tr>
+                <th class="px-5 py-3 font-medium">Date</th>
+                <th class="px-5 py-3 font-medium">Dose</th>
+                <th class="px-5 py-3 font-medium">Événement</th>
+                <th class="px-5 py-3 font-medium">Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(h, i) in [...med.historique].reverse()"
+                :key="h.date + h.dose + i"
+                class="border-t border-[var(--border)]"
+              >
+                <td class="px-5 py-2.5">{{ h.date }}</td>
+                <td class="px-5 py-2.5 font-medium">{{ h.dose }}</td>
+                <td class="px-5 py-2.5 capitalize">
+                  {{ eventLabels[h.evenement] ?? h.evenement }}
+                </td>
+                <td class="px-5 py-2.5 text-[var(--muted-foreground)] italic">
+                  {{ h.note || '—' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Markdown fiche -->
+      <div v-if="docLoading" class="py-8 text-center text-sm text-[var(--muted-foreground)]">
+        Chargement de la fiche…
+      </div>
+      <div v-else-if="docError" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        {{ docError }}
+      </div>
+      <div v-else-if="doc" class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8">
+        <div class="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+          <BookOpen :size="13" />
+          Fiche
+        </div>
+        <article class="prose" v-html="renderedDoc" />
+      </div>
+      <div
+        v-else
+        class="rounded-xl border border-dashed border-[var(--border)] px-4 py-8 text-center text-sm text-[var(--muted-foreground)]"
+      >
+        Pas de fiche documentaire associée
+      </div>
     </div>
-  </div>
+  </PageShell>
 </template>

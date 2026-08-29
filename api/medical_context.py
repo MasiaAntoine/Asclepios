@@ -64,6 +64,17 @@ def build_medical_context(data_dir: Path) -> str:
             json.dumps(profil, ensure_ascii=False, indent=2),
         )
 
+    # Notice mutuelle (garanties)
+    notice_name = ""
+    if isinstance(profil, dict):
+        mut = profil.get("mutuelle") or {}
+        if isinstance(mut, dict):
+            notice_name = str(mut.get("notice_md") or "").strip()
+    notice_path = data_dir / (notice_name or "henner-notice-complementaire-sante.md")
+    notice = _read_text(notice_path)
+    if notice.strip():
+        add("Notice mutuelle (garanties)", _truncate(notice, 25_000))
+
     # Poids
     poids = _read_text(data_dir / "poids.csv")
     if poids.strip():

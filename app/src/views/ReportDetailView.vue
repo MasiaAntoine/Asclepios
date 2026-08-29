@@ -5,6 +5,7 @@ import { marked, type Tokens } from 'marked'
 import { useReports } from '@/composables/useReports'
 import { ArrowLeft, Calendar, FileText, List, Tag } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
+import PageShell from '@/components/PageShell.vue'
 
 interface TocItem {
   id: string
@@ -244,9 +245,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-5">
+  <PageShell max-width="xl" no-scroll>
+    <template #header>
       <div class="flex items-center gap-4">
         <button
           @click="router.push('/rapports')"
@@ -270,7 +270,7 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-    </div>
+    </template>
 
     <!-- Loading -->
     <div
@@ -295,8 +295,8 @@ onUnmounted(() => {
     </div>
 
     <!-- Content + TOC -->
-    <div v-else ref="scrollContainerRef" class="flex-1 overflow-y-auto">
-      <div class="mx-auto flex max-w-6xl gap-10 px-8 py-8">
+    <div v-else ref="scrollContainerRef" class="min-h-0 flex-1 overflow-y-auto">
+      <div class="flex gap-10">
         <!-- Article -->
         <div class="min-w-0 flex-1">
           <div v-if="report.tags.length" class="mb-6 flex flex-wrap gap-2">
@@ -344,5 +344,5 @@ onUnmounted(() => {
         </aside>
       </div>
     </div>
-  </div>
+  </PageShell>
 </template>

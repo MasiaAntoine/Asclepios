@@ -17,6 +17,7 @@ import {
 } from '@lucide/vue'
 import { useDoctors, doctorFullName, doctorPhotoUrl, type Doctor } from '@/composables/useDoctors'
 import DoctorEditDialog from '@/components/DoctorEditDialog.vue'
+import PageShell from '@/components/PageShell.vue'
 
 const { doctors, loading, error, reload } = useDoctors()
 
@@ -41,28 +42,22 @@ function selectDoctor(doctor: Doctor) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-6">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-[var(--foreground)]">Équipe médicale</h1>
-          <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-            {{ doctors.length }} praticien{{ doctors.length > 1 ? 's' : '' }} dans votre suivi
-          </p>
-          <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
-        </div>
-        <DoctorEditDialog mode="create" @saved="onDoctorsChanged" />
-      </div>
+  <PageShell title="Équipe médicale" max-width="lg">
+    <template #description>
+      <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
+        {{ doctors.length }} praticien{{ doctors.length > 1 ? 's' : '' }} dans votre suivi
+      </p>
+      <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
+    </template>
+    <template #actions>
+      <DoctorEditDialog mode="create" @saved="onDoctorsChanged" />
+    </template>
+
+    <div v-if="loading && !doctors.length" class="py-24 text-center text-sm text-[var(--muted-foreground)]">
+      Chargement…
     </div>
 
-    <!-- Content -->
-    <div class="flex-1 overflow-y-auto px-8 py-8">
-      <div v-if="loading && !doctors.length" class="py-24 text-center text-sm text-[var(--muted-foreground)]">
-        Chargement…
-      </div>
-
-      <div v-else class="mx-auto max-w-5xl space-y-6">
+    <div v-else class="space-y-6">
         <!-- Cards list -->
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <button
@@ -417,6 +412,5 @@ function selectDoctor(doctor: Doctor) {
           </div>
         </Transition>
       </div>
-    </div>
-  </div>
+  </PageShell>
 </template>

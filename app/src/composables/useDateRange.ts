@@ -110,6 +110,19 @@ export function useDateRange(anchorMax?: Ref<Date | null | undefined>) {
   }
 }
 
+/** Query string `?date_from=&date_to=` pour les PDF, alignée sur le filtre UI. */
+export function dateRangeQuery(bounds: DateRangeBounds): string {
+  const params = new URLSearchParams()
+  if (bounds.from) {
+    params.set('date_from', toInputValue(bounds.from))
+  }
+  if (bounds.to) {
+    params.set('date_to', toInputValue(bounds.to))
+  }
+  const q = params.toString()
+  return q ? `?${q}` : ''
+}
+
 export function filterByDateRange<T extends { dateObj: Date }>(
   items: T[],
   inRange: (d: Date) => boolean,

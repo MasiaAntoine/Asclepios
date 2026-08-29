@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import { useProfile } from '@/composables/useProfile'
 import {
   Cigarette,
+  CreditCard,
+  ExternalLink,
   Heart,
   PawPrint,
   Pill,
@@ -13,6 +15,8 @@ import {
   Users,
 } from '@lucide/vue'
 import EditProfileDialog from '@/components/EditProfileDialog.vue'
+import PageShell from '@/components/PageShell.vue'
+import { dataUrl } from '@/lib/dataClient'
 
 const {
   profil,
@@ -44,6 +48,34 @@ const initials = computed(() => {
   return `${profil.value.prenom[0] ?? ''}${profil.value.nom[0] ?? ''}`.toUpperCase()
 })
 
+const mutuelleDocUrl = computed(() => {
+  const doc = profil.value?.mutuelle?.document
+  return doc ? dataUrl(doc) : null
+})
+
+const mutuelleNoticeUrl = computed(() => {
+  const doc = profil.value?.mutuelle?.notice_md
+  return doc ? dataUrl(doc) : null
+})
+
+const mutuelleContratUrl = computed(() => {
+  const doc = profil.value?.mutuelle?.contrat_pdf
+  return doc ? dataUrl(doc) : null
+})
+
+const garantieLabels: Record<string, string> = {
+  pharmacie: 'Pharmacie',
+  laboratoire_radiologie: 'Labo / Radiologie',
+  transport: 'Transport',
+  auxiliaires_medicaux: 'Auxiliaires médicaux',
+  soins_dentaires: 'Soins dentaires',
+  soins_externes: 'Soins externes',
+  consultations: 'Consultations',
+  centre_de_sante: 'Centre de santé',
+  hospitalisation: 'Hospitalisation',
+  audioprotheses_optique_protheses_dentaires: 'Audio / Optique / Prothèses dentaires',
+}
+
 function eventLabel(e: string) {
   const map: Record<string, string> = {
     debut: 'Début',
@@ -65,28 +97,22 @@ function eventClass(e: string) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-6">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-[var(--foreground)]">Profil patient</h1>
-          <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-            Identité, constantes et traitements en cours
-          </p>
-        </div>
-        <EditProfileDialog v-if="profil" :profil="profil" @saved="onProfileSaved" />
-      </div>
-    </div>
+  <PageShell
+    title="Profil patient"
+    description="Identité, constantes et traitements en cours"
+    max-width="lg"
+  >
+    <template #actions>
+      <EditProfileDialog v-if="profil" :profil="profil" @saved="onProfileSaved" />
+    </template>
 
-    <div class="flex-1 overflow-y-auto px-8 py-8">
-      <div v-if="error" class="mx-auto max-w-5xl rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-        {{ error }}
-      </div>
-      <div v-else-if="loading && !profil" class="py-24 text-center text-sm text-[var(--muted-foreground)]">
-        Chargement du profil…
-      </div>
-      <div v-else-if="profil" class="mx-auto max-w-5xl space-y-8">
+    <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {{ error }}
+    </div>
+    <div v-else-if="loading && !profil" class="py-24 text-center text-sm text-[var(--muted-foreground)]">
+      Chargement du profil…
+    </div>
+    <div v-else-if="profil" class="space-y-8">
         <!-- Hero identity -->
         <section class="flex flex-col gap-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 sm:flex-row sm:items-center">
           <div class="relative h-28 w-28 shrink-0 overflow-hidden rounded-2xl bg-[var(--accent)] shadow-sm ring-1 ring-[var(--border)]">
@@ -138,7 +164,241 @@ function eventClass(e: string) {
                 IMC {{ imc.toFixed(1) }}
                 <span class="opacity-70">— {{ imcLabel }}</span>
               </span>
+              <span
+                v-if="profil.securite_sociale?.nir"
+                class="inline-flex items-center gap-1.5 rounded-full bg-[var(--secondary)] px-3 py-1 font-mono text-xs font-medium text-[var(--secondary-foreground)]"
+              >
+                <CreditCard :size="12" />
+                {{ profil.securite_sociale.nir }}
+              </span>
             </div>
+          </div>
+        </section>
+
+        <!-- Sécurité sociale / Carte Vitale -->
+        <section
+          v-if="profil.securite_sociale"
+          class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6"
+        >
+          <h3 class="mb-4 flex items-center gap-2 text-lg font-semibold text-[var(--foreground)]">
+            <CreditCard :size="18" class="text-[var(--primary)]" />
+            Sécurité sociale
+          </h3>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+                N° de sécurité sociale (NIR)
+              </p>
+              <p class="mt-1 font-mono text-lg font-semibold tracking-wide text-[var(--foreground)]">
+                {{ profil.securite_sociale.nir }}
+              </p>
+            </div>
+            <div v-if="profil.securite_sociale.carte_vitale_emise_le">
+              <p class="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+                Carte Vitale émise le
+              </p>
+              <p class="mt-1 text-lg font-semibold text-[var(--foreground)]">
+                {{ profil.securite_sociale.carte_vitale_emise_le }}
+              </p>
+            </div>
+          </div>
+          <div
+            v-if="profil.securite_sociale.carte_vitale_verso"
+            class="mt-5 rounded-xl border border-[var(--border)] bg-[var(--accent)]/40 p-4"
+          >
+            <p class="mb-3 text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+              Verso carte Vitale
+            </p>
+            <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div>
+                <dt class="text-xs text-[var(--muted-foreground)]">Période</dt>
+                <dd class="font-medium text-[var(--foreground)]">
+                  {{ profil.securite_sociale.carte_vitale_verso.periode }}
+                  <span class="ml-1 text-[var(--muted-foreground)]">
+                    {{ profil.securite_sociale.carte_vitale_verso.type }}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt class="text-xs text-[var(--muted-foreground)]">Fabricant</dt>
+                <dd class="font-medium text-[var(--foreground)]">
+                  {{ profil.securite_sociale.carte_vitale_verso.fabricant }}
+                </dd>
+              </div>
+              <div class="col-span-2">
+                <dt class="text-xs text-[var(--muted-foreground)]">N° / indice</dt>
+                <dd class="font-mono font-medium text-[var(--foreground)]">
+                  {{ profil.securite_sociale.carte_vitale_verso.numero }}
+                  <template v-if="profil.securite_sociale.carte_vitale_verso.indice">
+                    {{ profil.securite_sociale.carte_vitale_verso.indice }}
+                  </template>
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <!-- Mutuelle -->
+        <section
+          v-if="profil.mutuelle"
+          class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6"
+        >
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <h3 class="flex items-center gap-2 text-lg font-semibold text-[var(--foreground)]">
+              <Shield :size="18" class="text-[var(--primary)]" />
+              Mutuelle
+            </h3>
+            <div class="flex flex-wrap gap-2">
+              <a
+                v-if="mutuelleNoticeUrl"
+                :href="mutuelleNoticeUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3 py-1.5 text-xs font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/20"
+              >
+                <ExternalLink :size="12" />
+                Notice .md
+              </a>
+              <a
+                v-if="mutuelleContratUrl"
+                :href="mutuelleContratUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+              >
+                <ExternalLink :size="12" />
+                Contrat PDF
+              </a>
+              <a
+                v-if="mutuelleDocUrl"
+                :href="mutuelleDocUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+              >
+                <ExternalLink :size="12" />
+                Carte PDF
+              </a>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <p class="text-xl font-bold text-[var(--foreground)]">
+              {{ profil.mutuelle.organisme }}
+              <span
+                v-if="profil.mutuelle.unite_gestion"
+                class="ml-2 text-sm font-medium text-[var(--muted-foreground)]"
+              >
+                {{ profil.mutuelle.unite_gestion }}
+              </span>
+            </p>
+            <p
+              v-if="profil.mutuelle.adresse"
+              class="mt-1 whitespace-pre-line text-sm text-[var(--muted-foreground)]"
+            >
+              {{ profil.mutuelle.adresse }}
+            </p>
+            <p
+              v-if="profil.mutuelle.validite"
+              class="mt-2 text-sm text-[var(--foreground)]"
+            >
+              Validité
+              <span class="font-medium">
+                du {{ profil.mutuelle.validite.debut }}
+                au {{ profil.mutuelle.validite.fin }}
+              </span>
+            </p>
+          </div>
+
+          <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-4">
+            <div v-if="profil.mutuelle.numero_amc">
+              <dt class="text-xs text-[var(--muted-foreground)]">N° AMC</dt>
+              <dd class="font-mono font-medium text-[var(--foreground)]">
+                {{ profil.mutuelle.numero_amc }}
+              </dd>
+            </div>
+            <div v-if="profil.mutuelle.numero_adherent">
+              <dt class="text-xs text-[var(--muted-foreground)]">N° adhérent</dt>
+              <dd class="font-mono font-medium text-[var(--foreground)]">
+                {{ profil.mutuelle.numero_adherent }}
+              </dd>
+            </div>
+            <div v-if="profil.mutuelle.numero_teletransmission">
+              <dt class="text-xs text-[var(--muted-foreground)]">N° télétransmission</dt>
+              <dd class="font-mono font-medium text-[var(--foreground)]">
+                {{ profil.mutuelle.numero_teletransmission }}
+              </dd>
+            </div>
+            <div v-if="profil.mutuelle.type_convention || profil.mutuelle.roc">
+              <dt class="text-xs text-[var(--muted-foreground)]">Type conv. / ROC</dt>
+              <dd class="font-medium text-[var(--foreground)]">
+                {{ profil.mutuelle.type_convention || '—' }}
+                <span class="text-[var(--muted-foreground)]"> / </span>
+                {{ profil.mutuelle.roc || '—' }}
+              </dd>
+            </div>
+            <div v-if="profil.mutuelle.reseau_tiers_payant">
+              <dt class="text-xs text-[var(--muted-foreground)]">Tiers payant</dt>
+              <dd class="font-medium text-[var(--foreground)]">
+                {{ profil.mutuelle.reseau_tiers_payant }}
+              </dd>
+            </div>
+            <div v-if="profil.mutuelle.carte_imprimee_le">
+              <dt class="text-xs text-[var(--muted-foreground)]">Carte imprimée le</dt>
+              <dd class="font-medium text-[var(--foreground)]">
+                {{ profil.mutuelle.carte_imprimee_le }}
+              </dd>
+            </div>
+          </dl>
+
+          <div
+            v-if="profil.mutuelle.contact"
+            class="mt-5 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2"
+          >
+            <p v-if="profil.mutuelle.contact.telephone">
+              <span class="text-[var(--muted-foreground)]">Tél. Henner :</span>
+              {{ profil.mutuelle.contact.telephone }}
+            </p>
+            <p v-if="profil.mutuelle.contact.email">
+              <span class="text-[var(--muted-foreground)]">Email :</span>
+              <a
+                :href="`mailto:${profil.mutuelle.contact.email}`"
+                class="text-[var(--primary)] hover:underline"
+              >{{ profil.mutuelle.contact.email }}</a>
+            </p>
+            <p v-if="profil.mutuelle.contact.viamedis_tel">
+              <span class="text-[var(--muted-foreground)]">Tél. Viamedis :</span>
+              {{ profil.mutuelle.contact.viamedis_tel }}
+            </p>
+            <p v-if="profil.mutuelle.contact.site">
+              <a
+                :href="profil.mutuelle.contact.site"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[var(--primary)] hover:underline"
+              >{{ profil.mutuelle.contact.site.replace(/^https?:\/\//, '') }}</a>
+            </p>
+          </div>
+
+          <div
+            v-if="profil.mutuelle.garanties_tiers_payant"
+            class="mt-5 rounded-xl border border-[var(--border)] bg-[var(--accent)]/40 p-4"
+          >
+            <p class="mb-3 text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">
+              Garanties tiers payant
+            </p>
+            <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+              <div
+                v-for="(valeur, cle) in profil.mutuelle.garanties_tiers_payant"
+                :key="cle"
+                class="flex justify-between gap-3 border-b border-[var(--border)]/50 pb-1.5 last:border-0"
+              >
+                <dt class="text-[var(--muted-foreground)]">
+                  {{ garantieLabels[cle] ?? cle }}
+                </dt>
+                <dd class="text-right font-medium text-[var(--foreground)]">{{ valeur }}</dd>
+              </div>
+            </dl>
           </div>
         </section>
 
@@ -381,6 +641,5 @@ function eventClass(e: string) {
           </div>
         </section>
       </div>
-    </div>
-  </div>
+  </PageShell>
 </template>

@@ -16,6 +16,7 @@ import {
 } from "@lucide/vue";
 import logoIconUrl from "@/assets/logo-icon.png";
 import { useProfile } from "@/composables/useProfile";
+import PageShell from "@/components/PageShell.vue";
 
 interface ChatMsg {
   id: string;
@@ -423,6 +424,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <PageShell flush no-scroll>
   <div class="flex h-full overflow-hidden">
     <aside
       class="flex w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
@@ -667,4 +669,5 @@ onMounted(() => {
       </div>
     </div>
   </div>
+  </PageShell>
 </template>

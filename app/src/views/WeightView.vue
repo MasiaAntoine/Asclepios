@@ -17,12 +17,13 @@ import type { ChartOptions, TooltipItem } from 'chart.js'
 import 'chartjs-adapter-date-fns'
 import { fr } from 'date-fns/locale'
 import { usePoids } from '@/composables/usePoids'
-import { useDateRange } from '@/composables/useDateRange'
+import { useDateRange, dateRangeQuery } from '@/composables/useDateRange'
 import DateRangeFilter from '@/components/DateRangeFilter.vue'
 import { baseChartOptions, chartColors, formatFrDate } from '@/lib/chartTheme'
 import { Scale, TrendingDown, TrendingUp, Ruler, Activity } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
 import AddWeightDialog from '@/components/AddWeightDialog.vue'
+import PageShell from '@/components/PageShell.vue'
 
 ChartJS.register(
   CategoryScale,
@@ -45,7 +46,11 @@ async function onWeightAdded() {
 const lastDate = computed(() =>
   entries.value.length ? entries.value[entries.value.length - 1].dateObj : null,
 )
-const { preset, customFrom, customTo, inRange, setPreset } = useDateRange(lastDate)
+const { preset, customFrom, customTo, bounds, inRange, setPreset } = useDateRange(lastDate)
+
+const pdfEndpoint = computed(
+  () => `/pdf/download/poids${dateRangeQuery(bounds.value)}`,
+)
 
 const filtered = computed(() => entries.value.filter((e) => inRange(e.dateObj)))
 
@@ -163,149 +168,142 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <div class="border-b border-[var(--border)] bg-[var(--card)] px-8 py-6">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-[var(--foreground)]">Suivi du poids</h1>
-          <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-            {{ filtered.length }} mesure{{ filtered.length > 1 ? 's' : '' }}
-            <span v-if="filtered.length !== entries.length" class="opacity-70">
-              / {{ entries.length }}
-            </span>
-            <template v-if="premier && dernier">
-              · {{ premier.date }} → {{ dernier.date }}
-            </template>
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <AddWeightDialog @added="onWeightAdded" />
-          <PdfButton
-            download-endpoint="/pdf/download/poids"
-            label="Télécharger le PDF"
-          />
-        </div>
-      </div>
-    </div>
-
-    <div class="flex-1 overflow-y-auto px-8 py-8">
-      <div class="mx-auto max-w-5xl space-y-6">
-        <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {{ error }}
-        </div>
-        <div v-else-if="loading && !entries.length" class="py-16 text-center text-sm text-[var(--muted-foreground)]">
-          Chargement…
-        </div>
-
-        <template v-else>
-        <!-- Date range -->
-        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
-          <DateRangeFilter
-            :preset="preset"
-            :custom-from="customFrom"
-            :custom-to="customTo"
-            @update:preset="preset = $event"
-            @update:custom-from="customFrom = $event"
-            @update:custom-to="customTo = $event"
-            @select="onSelectPreset"
-          />
-        </div>
-
-        <!-- Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
-              <Scale :size="16" class="text-[var(--primary)]" />
-            </div>
-            <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Dernier poids</p>
-            <p class="mt-1 text-xl font-bold">{{ dernier ? `${dernier.poids_kg} kg` : '—' }}</p>
-            <p class="text-xs text-[var(--muted-foreground)]">{{ dernier?.date }}</p>
-          </div>
-
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
-              <Ruler :size="16" class="text-[var(--primary)]" />
-            </div>
-            <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">IMC</p>
-            <p class="mt-1 text-xl font-bold">{{ dernier?.imc?.toFixed(1) ?? '—' }}</p>
-            <p class="text-xs text-[var(--muted-foreground)]">Taille {{ tailleCm }} cm</p>
-          </div>
-
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
-              <component :is="(deltaRecent ?? 0) <= 0 ? TrendingDown : TrendingUp" :size="16" class="text-[var(--primary)]" />
-            </div>
-            <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Dernière variation</p>
-            <p class="mt-1 text-xl font-bold" :class="deltaClass(deltaRecent)">
-              {{ deltaRecent == null ? '—' : `${deltaRecent > 0 ? '+' : ''}${deltaRecent} kg` }}
-            </p>
-            <p class="text-xs text-[var(--muted-foreground)]">vs mesure précédente</p>
-          </div>
-
-          <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
-            <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
-              <Activity :size="16" class="text-[var(--primary)]" />
-            </div>
-            <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Évolution totale</p>
-            <p class="mt-1 text-xl font-bold" :class="deltaClass(delta)">
-              {{ delta == null ? '—' : `${delta > 0 ? '+' : ''}${delta} kg` }}
-            </p>
-            <p class="text-xs text-[var(--muted-foreground)]">
-              Min {{ min?.poids_kg ?? '—' }} · Max {{ max?.poids_kg ?? '—' }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Chart -->
-        <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <h2 class="mb-4 text-sm font-semibold text-[var(--foreground)]">Courbe de poids</h2>
-          <div v-if="filtered.length" class="h-80 w-full">
-            <Line :data="chartData" :options="chartOptions" />
-          </div>
-          <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">
-            Aucune mesure sur cette période
-          </p>
-        </div>
-
-        <!-- Table -->
-        <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
-          <div class="border-b border-[var(--border)] px-5 py-3">
-            <h2 class="text-sm font-semibold">Historique des mesures</h2>
-          </div>
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-              <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
-                <tr>
-                  <th class="px-5 py-3 font-medium">Date</th>
-                  <th class="px-5 py-3 font-medium">Poids</th>
-                  <th class="px-5 py-3 font-medium">IMC</th>
-                  <th class="px-5 py-3 font-medium">Δ</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="e in tableRows"
-                  :key="e.date + e.poids_kg"
-                  class="border-t border-[var(--border)]"
-                >
-                  <td class="px-5 py-2.5">{{ e.date }}</td>
-                  <td class="px-5 py-2.5 font-medium">{{ e.poids_kg }} kg</td>
-                  <td class="px-5 py-2.5 text-[var(--muted-foreground)]">
-                    {{ e.imc?.toFixed(1) ?? '—' }}
-                  </td>
-                  <td class="px-5 py-2.5">
-                    <span v-if="e.delta != null" :class="deltaClass(e.delta)">
-                      {{ e.delta > 0 ? '+' : '' }}{{ e.delta }}
-                    </span>
-                    <span v-else class="text-[var(--muted-foreground)]">—</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+  <PageShell title="Poids" max-width="lg">
+    <template #description>
+      <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
+        {{ filtered.length }} mesure{{ filtered.length > 1 ? 's' : '' }}
+        <span v-if="filtered.length !== entries.length" class="opacity-70">
+          / {{ entries.length }}
+        </span>
+        <template v-if="premier && dernier">
+          · {{ premier.date }} → {{ dernier.date }}
         </template>
+      </p>
+    </template>
+    <template #actions>
+      <AddWeightDialog @added="onWeightAdded" />
+      <PdfButton
+        :download-endpoint="pdfEndpoint"
+        label="Télécharger le PDF"
+      />
+    </template>
+
+    <div class="space-y-6">
+      <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        {{ error }}
       </div>
+      <div v-else-if="loading && !entries.length" class="py-16 text-center text-sm text-[var(--muted-foreground)]">
+        Chargement…
+      </div>
+
+      <template v-else>
+      <!-- Date range -->
+      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
+        <DateRangeFilter
+          :preset="preset"
+          :custom-from="customFrom"
+          :custom-to="customTo"
+          @update:preset="preset = $event"
+          @update:custom-from="customFrom = $event"
+          @update:custom-to="customTo = $event"
+          @select="onSelectPreset"
+        />
+      </div>
+
+      <!-- Stats -->
+      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
+            <Scale :size="16" class="text-[var(--primary)]" />
+          </div>
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Dernier poids</p>
+          <p class="mt-1 text-xl font-bold">{{ dernier ? `${dernier.poids_kg} kg` : '—' }}</p>
+          <p class="text-xs text-[var(--muted-foreground)]">{{ dernier?.date }}</p>
+        </div>
+
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
+            <Ruler :size="16" class="text-[var(--primary)]" />
+          </div>
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">IMC</p>
+          <p class="mt-1 text-xl font-bold">{{ dernier?.imc?.toFixed(1) ?? '—' }}</p>
+          <p class="text-xs text-[var(--muted-foreground)]">Taille {{ tailleCm }} cm</p>
+        </div>
+
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
+            <component :is="(deltaRecent ?? 0) <= 0 ? TrendingDown : TrendingUp" :size="16" class="text-[var(--primary)]" />
+          </div>
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Dernière variation</p>
+          <p class="mt-1 text-xl font-bold" :class="deltaClass(deltaRecent)">
+            {{ deltaRecent == null ? '—' : `${deltaRecent > 0 ? '+' : ''}${deltaRecent} kg` }}
+          </p>
+          <p class="text-xs text-[var(--muted-foreground)]">vs mesure précédente</p>
+        </div>
+
+        <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div class="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
+            <Activity :size="16" class="text-[var(--primary)]" />
+          </div>
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Évolution totale</p>
+          <p class="mt-1 text-xl font-bold" :class="deltaClass(delta)">
+            {{ delta == null ? '—' : `${delta > 0 ? '+' : ''}${delta} kg` }}
+          </p>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            Min {{ min?.poids_kg ?? '—' }} · Max {{ max?.poids_kg ?? '—' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <h2 class="mb-4 text-sm font-semibold text-[var(--foreground)]">Courbe de poids</h2>
+        <div v-if="filtered.length" class="h-80 w-full">
+          <Line :data="chartData" :options="chartOptions" />
+        </div>
+        <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">
+          Aucune mesure sur cette période
+        </p>
+      </div>
+
+      <!-- Table -->
+      <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+        <div class="border-b border-[var(--border)] px-5 py-3">
+          <h2 class="text-sm font-semibold">Historique des mesures</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
+              <tr>
+                <th class="px-5 py-3 font-medium">Date</th>
+                <th class="px-5 py-3 font-medium">Poids</th>
+                <th class="px-5 py-3 font-medium">IMC</th>
+                <th class="px-5 py-3 font-medium">Δ</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="e in tableRows"
+                :key="e.date + e.poids_kg"
+                class="border-t border-[var(--border)]"
+              >
+                <td class="px-5 py-2.5">{{ e.date }}</td>
+                <td class="px-5 py-2.5 font-medium">{{ e.poids_kg }} kg</td>
+                <td class="px-5 py-2.5 text-[var(--muted-foreground)]">
+                  {{ e.imc?.toFixed(1) ?? '—' }}
+                </td>
+                <td class="px-5 py-2.5">
+                  <span v-if="e.delta != null" :class="deltaClass(e.delta)">
+                    {{ e.delta > 0 ? '+' : '' }}{{ e.delta }}
+                  </span>
+                  <span v-else class="text-[var(--muted-foreground)]">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </template>
     </div>
-  </div>
+  </PageShell>
 </template>

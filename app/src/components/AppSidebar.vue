@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import logoIconUrl from '@/assets/logo-icon.png'
-import { Activity, BookOpen, FileText, LayoutDashboard, MessageSquare, Scale, Settings, Stethoscope, UserRound } from '@lucide/vue'
+import { Activity, BookOpen, Droplets, FileText, LayoutDashboard, MessageSquare, Scale, Settings, Stethoscope, UserRound } from '@lucide/vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,6 +36,12 @@ const navItems = [
     icon: Scale,
     to: '/poids',
     name: 'weight',
+  },
+  {
+    label: 'Prise de sang',
+    icon: Droplets,
+    to: '/prise-de-sang',
+    name: 'prise-de-sang',
   },
   {
     label: 'Suivi',

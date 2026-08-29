@@ -8,3 +8,6 @@ __pycache__/
 *.key
 data/*
 !data/.gitkeep
+
+# Cache parsing prises de sang
+data/prise-de-sang/.cache/
