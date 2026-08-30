@@ -156,6 +156,33 @@ function formatAge(dateNaissance: string): number | null {
   return age
 }
 
+function ageParts(dateNaissance: string): { years: number; months: number } | null {
+  const birth = parseFrDate(dateNaissance)
+  if (!birth) return null
+  const today = new Date()
+  let years = today.getFullYear() - birth.getFullYear()
+  let months = today.getMonth() - birth.getMonth()
+  if (today.getDate() < birth.getDate()) months -= 1
+  if (months < 0) {
+    years -= 1
+    months += 12
+  }
+  if (years < 0) return null
+  return { years, months }
+}
+
+/** Affiche « né le JJ/MM/AAAA · X ans Y mois » si date valide. */
+export function ageLabel(dateNaissance: string | null | undefined): string | null {
+  if (!dateNaissance) return null
+  const parts = ageParts(dateNaissance)
+  if (!parts) return `né le ${dateNaissance}`
+  const { years, months } = parts
+  const bits: string[] = []
+  if (years > 0) bits.push(`${years} an${years > 1 ? 's' : ''}`)
+  if (months > 0 || years === 0) bits.push(`${months} mois`)
+  return `né le ${dateNaissance} · ${bits.join(' ')}`
+}
+
 function parsePoidsCsv(raw: string): PoidsEntry[] {
   return raw
     .trim()

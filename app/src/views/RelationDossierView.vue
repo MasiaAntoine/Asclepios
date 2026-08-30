@@ -69,6 +69,50 @@ function relationDuree(r: RelationPassee): string | null {
   return r.duree || null
 }
 
+function formatAgeParts(p: { years: number; months: number }): string {
+  const bits: string[] = []
+  if (p.years > 0) bits.push(`${p.years} an${p.years > 1 ? 's' : ''}`)
+  if (p.months > 0 || p.years === 0) bits.push(`${p.months} mois`)
+  return bits.join(' ')
+}
+
+function ageAtDate(birth: Date, at: Date): { years: number; months: number } | null {
+  let years = at.getFullYear() - birth.getFullYear()
+  let months = at.getMonth() - birth.getMonth()
+  if (at.getDate() < birth.getDate()) months -= 1
+  if (months < 0) {
+    years -= 1
+    months += 12
+  }
+  if (years < 0) return null
+  return { years, months }
+}
+
+const relationAgeLabel = computed(() => {
+  const r = relation.value
+  const birth = parseFrDate(profil.value?.date_naissance)
+  if (!r || !birth) return null
+  const from = parseFrDate(r.debut)
+  const to = parseFrDate(r.fin)
+  if (from && to) {
+    const a = ageAtDate(birth, from)
+    const b = ageAtDate(birth, to)
+    if (!a || !b) return null
+    const fromS = formatAgeParts(a)
+    const toS = formatAgeParts(b)
+    return fromS === toS ? fromS : `${fromS} → ${toS}`
+  }
+  if (from) {
+    const a = ageAtDate(birth, from)
+    return a ? formatAgeParts(a) : null
+  }
+  if (to) {
+    const b = ageAtDate(birth, to)
+    return b ? formatAgeParts(b) : null
+  }
+  return null
+})
+
 const relation = computed(() => {
   const list = profil.value?.relations_passees ?? []
   return (
@@ -153,6 +197,10 @@ const html = computed(() => {
             <template v-if="relationDuree(relation)">
               <span class="text-[var(--border)]">·</span>
               {{ relationDuree(relation) }}
+            </template>
+            <template v-if="relationAgeLabel">
+              <span class="text-[var(--border)]">·</span>
+              ton âge {{ relationAgeLabel }}
             </template>
             <template v-if="relation.note">
               <span class="text-[var(--border)]">·</span>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useProfile } from '@/composables/useProfile'
+import { useProfile, ageLabel } from '@/composables/useProfile'
 import type { RelationSuite } from '@/composables/useProfile'
 import {
   Cigarette,
@@ -92,6 +92,54 @@ function relationDuree(r: {
     return `${years} an${years > 1 ? 's' : ''} ${rem} mois`
   }
   return r.duree || null
+}
+
+function formatAgeParts(p: { years: number; months: number }): string {
+  const bits: string[] = []
+  if (p.years > 0) bits.push(`${p.years} an${p.years > 1 ? 's' : ''}`)
+  if (p.months > 0 || p.years === 0) bits.push(`${p.months} mois`)
+  return bits.join(' ')
+}
+
+function ageAtDate(birth: Date, at: Date): { years: number; months: number } | null {
+  let years = at.getFullYear() - birth.getFullYear()
+  let months = at.getMonth() - birth.getMonth()
+  if (at.getDate() < birth.getDate()) months -= 1
+  if (months < 0) {
+    years -= 1
+    months += 12
+  }
+  if (years < 0) return null
+  return { years, months }
+}
+
+/** Âge pendant la relation (à partir de ta date de naissance). */
+function relationAgeLabel(r: {
+  debut?: string | null
+  fin?: string | null
+}): string | null {
+  const birth = parseFrDate(profil.value?.date_naissance)
+  if (!birth) return null
+  const from = parseFrDate(r.debut)
+  const to = parseFrDate(r.fin)
+  if (from && to) {
+    const a = ageAtDate(birth, from)
+    const b = ageAtDate(birth, to)
+    if (!a || !b) return null
+    const fromS = formatAgeParts(a)
+    const toS = formatAgeParts(b)
+    if (fromS === toS) return fromS
+    return `${fromS} → ${toS}`
+  }
+  if (from) {
+    const a = ageAtDate(birth, from)
+    return a ? formatAgeParts(a) : null
+  }
+  if (to) {
+    const b = ageAtDate(birth, to)
+    return b ? formatAgeParts(b) : null
+  }
+  return null
 }
 
 const LIEN_LABELS: Record<string, string> = {
@@ -615,8 +663,8 @@ function eventClass(e: string) {
                   <p class="text-sm font-medium">{{ profil.parents.pere.prenom }} {{ profil.parents.pere.nom }}</p>
                   <p class="text-xs text-[var(--muted-foreground)]">
                     Père
-                    <template v-if="profil.parents.pere.date_naissance">
-                      · né le {{ profil.parents.pere.date_naissance }}
+                    <template v-if="ageLabel(profil.parents.pere.date_naissance)">
+                      · {{ ageLabel(profil.parents.pere.date_naissance) }}
                     </template>
                   </p>
                 </div>
@@ -627,7 +675,12 @@ function eventClass(e: string) {
                 </div>
                 <div>
                   <p class="text-sm font-medium">{{ profil.parents.mere.prenom }} {{ profil.parents.mere.nom }}</p>
-                  <p class="text-xs text-[var(--muted-foreground)]">Mère</p>
+                  <p class="text-xs text-[var(--muted-foreground)]">
+                    Mère
+                    <template v-if="ageLabel(profil.parents.mere.date_naissance)">
+                      · {{ ageLabel(profil.parents.mere.date_naissance) }}
+                    </template>
+                  </p>
                 </div>
               </li>
               <li
@@ -640,7 +693,12 @@ function eventClass(e: string) {
                 </div>
                 <div>
                   <p class="text-sm font-medium">{{ s.prenom }} {{ s.nom }}</p>
-                  <p class="text-xs capitalize text-[var(--muted-foreground)]">{{ s.lien }}</p>
+                  <p class="text-xs capitalize text-[var(--muted-foreground)]">
+                    {{ s.lien }}
+                    <template v-if="ageLabel(s.date_naissance)">
+                      · {{ ageLabel(s.date_naissance) }}
+                    </template>
+                  </p>
                 </div>
               </li>
             </ul>
@@ -675,7 +733,9 @@ function eventClass(e: string) {
                     </div>
                     <p class="text-xs capitalize text-[var(--muted-foreground)]">
                       {{ p.lien }}
-                      <template v-if="p.date_naissance"> · né le {{ p.date_naissance }}</template>
+                      <template v-if="ageLabel(p.date_naissance)">
+                        · {{ ageLabel(p.date_naissance) }}
+                      </template>
                     </p>
                   </div>
                 </li>
@@ -700,7 +760,9 @@ function eventClass(e: string) {
                     <p class="text-sm font-medium">{{ a.nom }}</p>
                     <p class="text-xs capitalize text-[var(--muted-foreground)]">
                       {{ a.espece }}{{ a.race ? ` · ${a.race}` : '' }}
-                      <template v-if="a.date_naissance"> · né le {{ a.date_naissance }}</template>
+                      <template v-if="ageLabel(a.date_naissance)">
+                        · {{ ageLabel(a.date_naissance) }}
+                      </template>
                     </p>
                   </div>
                 </li>
@@ -779,6 +841,12 @@ function eventClass(e: string) {
                   <template v-else-if="relationDuree(r)">{{ relationDuree(r) }}</template>
                   <template v-if="(r.debut || r.fin || relationDuree(r)) && r.note"> · </template>
                   <template v-if="r.note">{{ r.note }}</template>
+                </p>
+                <p
+                  v-if="relationAgeLabel(r)"
+                  class="mt-0.5 text-[11px] text-[var(--muted-foreground)]/85"
+                >
+                  Ton âge · {{ relationAgeLabel(r) }}
                 </p>
                 <p
                   v-if="r.apres?.length"
