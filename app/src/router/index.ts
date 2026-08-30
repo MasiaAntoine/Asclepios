@@ -47,6 +47,16 @@ const router = createRouter({
       component: () => import('@/views/PriseDeSangDetailView.vue'),
     },
     {
+      path: '/ordonnances',
+      name: 'ordonnances',
+      component: () => import('@/views/OrdonnancesView.vue'),
+    },
+    {
+      path: '/ordonnances/:id',
+      name: 'ordonnances-detail',
+      component: () => import('@/views/OrdonnancesDetailView.vue'),
+    },
+    {
       path: '/meds',
       name: 'meds',
       component: () => import('@/views/MedsView.vue'),

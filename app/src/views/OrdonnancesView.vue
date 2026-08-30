@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLabPdfs } from '@/composables/useLabPdfs'
+import { useOrdonnances } from '@/composables/useOrdonnances'
 import PageShell from '@/components/PageShell.vue'
 import {
   Calendar,
   ChevronRight,
-  Droplets,
-  FileText,
+  FlaskConical,
   Loader,
+  Pill,
+  ScrollText,
   Search,
   Tag,
   Upload,
@@ -16,7 +17,7 @@ import {
 } from '@lucide/vue'
 
 const router = useRouter()
-const { items, loading, error, load } = useLabPdfs()
+const { items, loading, error, load } = useOrdonnances()
 
 const searchQuery = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -38,8 +39,9 @@ const filtered = computed(() => {
   return list.filter(
     (i) =>
       (i.title || '').toLowerCase().includes(q) ||
-      (i.lab || '').toLowerCase().includes(q) ||
+      (i.prescriber || '').toLowerCase().includes(q) ||
       (i.filename || '').toLowerCase().includes(q) ||
+      (i.kind || '').toLowerCase().includes(q) ||
       (i.date || '').includes(q) ||
       i.id.toLowerCase().includes(q),
   )
@@ -72,8 +74,15 @@ function formatGroupLabel(key: string) {
   return `${months[parseInt(month) - 1]} ${year}`
 }
 
+function cardTitle(item: (typeof items.value)[number]) {
+  if (item.kind === 'biologie') {
+    return item.date ? `Biologie du ${formatDate(item.date)}` : item.title
+  }
+  return item.date ? `Ordonnance du ${formatDate(item.date)}` : item.title
+}
+
 function open(id: string) {
-  void router.push(`/prise-de-sang/${encodeURIComponent(id)}`)
+  void router.push(`/ordonnances/${encodeURIComponent(id)}`)
 }
 
 function pickFile() {
@@ -102,7 +111,7 @@ async function onFileSelected(ev: Event) {
   try {
     const form = new FormData()
     form.append('file', file, file.name)
-    const res = await fetch('/api/labs/pdfs/upload', { method: 'POST', body: form })
+    const res = await fetch('/api/ordonnances/pdfs/upload', { method: 'POST', body: form })
     if (!res.ok) {
       let detail = `HTTP ${res.status}`
       try {
@@ -151,10 +160,10 @@ async function onFileSelected(ev: Event) {
 </script>
 
 <template>
-  <PageShell title="Prise de sang" max-width="lg">
+  <PageShell title="Ordonnances" max-width="lg">
     <template #description>
       <p class="mt-0.5 text-sm text-[var(--muted-foreground)]">
-        {{ items.length }} compte{{ items.length > 1 ? 's' : '' }}-rendu{{ items.length > 1 ? 's' : '' }} au total
+        {{ items.length }} ordonnance{{ items.length > 1 ? 's' : '' }} au total
       </p>
       <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
     </template>
@@ -167,7 +176,7 @@ async function onFileSelected(ev: Event) {
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="Rechercher un résultat…"
+          placeholder="Rechercher une ordonnance…"
           class="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] py-2.5 pl-9 pr-4 text-sm placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 transition"
         />
       </div>
@@ -230,14 +239,14 @@ async function onFileSelected(ev: Event) {
     </div>
 
     <div v-if="loading && !items.length" class="flex flex-col items-center justify-center py-24 text-center">
-      <p class="text-sm text-[var(--muted-foreground)]">Chargement des résultats…</p>
+      <p class="text-sm text-[var(--muted-foreground)]">Chargement des ordonnances…</p>
     </div>
 
     <div v-else-if="filtered.length === 0" class="flex flex-col items-center justify-center py-16 text-center">
       <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--accent)]">
-        <Droplets :size="22" class="text-[var(--primary)]" />
+        <ScrollText :size="22" class="text-[var(--primary)]" />
       </div>
-      <p class="text-base font-medium text-[var(--foreground)]">Aucun résultat trouvé</p>
+      <p class="text-base font-medium text-[var(--foreground)]">Aucune ordonnance trouvée</p>
       <p class="mt-1 text-sm text-[var(--muted-foreground)]">
         {{ items.length ? 'Modifiez votre recherche.' : 'Ajoutez un PDF via le bouton ci-dessus.' }}
       </p>
@@ -265,7 +274,12 @@ async function onFileSelected(ev: Event) {
 
             <div class="mb-3 flex items-center justify-between">
               <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent)]">
-                <FileText :size="16" class="text-[var(--primary)]" />
+                <FlaskConical
+                  v-if="item.kind === 'biologie'"
+                  :size="16"
+                  class="text-[var(--primary)]"
+                />
+                <Pill v-else :size="16" class="text-[var(--primary)]" />
               </div>
               <div v-if="item.date" class="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
                 <Calendar :size="12" />
@@ -273,16 +287,31 @@ async function onFileSelected(ev: Event) {
               </div>
             </div>
 
-            <h3 class="mb-3 line-clamp-3 text-sm font-semibold leading-snug text-[var(--foreground)] transition-colors group-hover:text-[var(--primary)]">
-              {{ item.date ? `Résultats du ${formatDate(item.date)}` : item.title }}
+            <h3 class="mb-1 line-clamp-2 text-sm font-semibold leading-snug text-[var(--foreground)] transition-colors group-hover:text-[var(--primary)]">
+              {{ cardTitle(item) }}
             </h3>
+            <p class="mb-3 line-clamp-1 text-xs text-[var(--muted-foreground)]">
+              {{ item.prescriber }}
+            </p>
 
             <div class="mt-auto flex flex-wrap gap-1.5">
               <span
                 class="flex items-center gap-1 rounded-full bg-[var(--secondary)] px-2 py-0.5 text-[10px] font-medium text-[var(--secondary-foreground)]"
               >
                 <Tag :size="9" />
-                {{ item.lab }}
+                {{ item.kind === 'biologie' ? 'Biologie' : 'Médicaments' }}
+              </span>
+              <span
+                v-if="item.kind === 'biologie' && item.exams_count != null"
+                class="rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-foreground)]"
+              >
+                {{ item.exams_count }} analyse{{ item.exams_count > 1 ? 's' : '' }}
+              </span>
+              <span
+                v-else-if="item.medications_count != null"
+                class="rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-foreground)]"
+              >
+                {{ item.medications_count }} médicament{{ item.medications_count > 1 ? 's' : '' }}
               </span>
             </div>
           </button>

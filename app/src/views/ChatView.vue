@@ -38,7 +38,7 @@ interface ConversationMeta {
 const API_BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) || "/api";
 const WELCOME =
-  "Bonjour — je suis **Asclepios**. Je connais ton dossier médical.\n\nPose-moi une question, par exemple :\n- *Comment a évolué mon poids ?*\n- *Résume ma posologie actuelle*\n- *Prépare un brief pour mon prochain RDV*";
+  "Salut — je suis **ton allié Asclepios**. Je connais ton dossier médical, et je suis là pour t’accompagner.\n\nPose-moi ce que tu veux, par exemple :\n- *Comment a évolué mon poids ?*\n- *Résume ma posologie actuelle*\n- *Prépare un brief pour mon prochain RDV*";
 
 const router = useRouter();
 const { photoUrl } = useProfile();

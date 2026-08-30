@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useProfile } from '@/composables/useProfile'
+import type { RelationSuite } from '@/composables/useProfile'
 import {
   Cigarette,
   CreditCard,
@@ -47,6 +48,66 @@ const initials = computed(() => {
   if (!profil.value) return '?'
   return `${profil.value.prenom[0] ?? ''}${profil.value.nom[0] ?? ''}`.toUpperCase()
 })
+
+/** Parse JJ/MM/AAAA → Date locale (début de journée). */
+function parseFrDate(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const m = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!m) return null
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]))
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** Durée calculée depuis debut/fin (prioritaire sur le champ duree saisi). */
+function relationDuree(r: {
+  debut?: string | null
+  fin?: string | null
+  duree?: string | null
+}): string | null {
+  const from = parseFrDate(r.debut)
+  const to = parseFrDate(r.fin)
+  if (from && to && to >= from) {
+    let months =
+      (to.getFullYear() - from.getFullYear()) * 12 +
+      (to.getMonth() - from.getMonth())
+    const dayDiff = to.getDate() - from.getDate()
+    if (dayDiff < 0) months -= 1
+    // Ajuste si quasi-mois complet (ex. 15/02 → 14/08 = 6 mois)
+    const endProbe = new Date(from)
+    endProbe.setMonth(endProbe.getMonth() + months)
+    const daysLeft = Math.round((to.getTime() - endProbe.getTime()) / 86_400_000)
+    if (daysLeft >= 25) months += 1
+
+    if (months <= 0) {
+      const days = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1
+      if (days < 14) return `${days} jour${days > 1 ? 's' : ''}`
+      return `${Math.max(1, Math.round(days / 7))} semaine${days >= 14 ? 's' : ''}`
+    }
+    if (months < 12) return `${months} mois`
+    const years = Math.floor(months / 12)
+    const rem = months % 12
+    if (rem === 0) return `${years} an${years > 1 ? 's' : ''}`
+    return `${years} an${years > 1 ? 's' : ''} ${rem} mois`
+  }
+  return r.duree || null
+}
+
+const LIEN_LABELS: Record<string, string> = {
+  plan_cul: 'plan cul',
+  tromperie: 'tromperie',
+  revue: 'revue',
+}
+
+function suiteLabel(a: RelationSuite): string {
+  const name = a.prenom
+    ? a.nom
+      ? `${a.prenom} ${a.nom}`
+      : a.prenom
+    : a.note || 'prénom inconnu'
+  const lien = LIEN_LABELS[a.lien] || a.lien
+  const extra = a.prenom && a.note ? ` (${a.note})` : ''
+  return `${name} (${lien})${extra}`
+}
 
 const mutuelleDocUrl = computed(() => {
   const doc = profil.value?.mutuelle?.document
@@ -639,6 +700,82 @@ function eventClass(e: string) {
               </ul>
             </div>
           </div>
+        </section>
+
+        <!-- Relations passées (contexte personnel / patterns) -->
+        <section
+          v-if="profil.vie_amoureuse || profil.relations_passees?.length"
+          class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
+        >
+          <h3 class="mb-1 flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
+            <Heart :size="16" class="text-[var(--primary)]" />
+            Relations passées
+          </h3>
+          <p class="mb-4 text-xs text-[var(--muted-foreground)]">
+            Contexte personnel pour repérer des patterns — pas un showcase.
+          </p>
+          <p
+            v-if="profil.vie_amoureuse?.note"
+            class="mb-4 rounded-lg border border-[var(--border)] bg-[var(--accent)]/40 px-3 py-2.5 text-sm leading-relaxed text-[var(--foreground)]"
+          >
+            {{ profil.vie_amoureuse.note }}
+          </p>
+          <div
+            v-if="profil.vie_amoureuse?.estimation_totale || profil.vie_amoureuse?.premiere_vers"
+            class="mb-4 flex flex-wrap gap-2"
+          >
+            <span
+              v-if="profil.vie_amoureuse.premiere_vers"
+              class="rounded-full bg-[var(--secondary)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--secondary-foreground)]"
+            >
+              Première vers {{ profil.vie_amoureuse.premiere_vers }}
+            </span>
+            <span
+              v-if="profil.vie_amoureuse.estimation_totale"
+              class="rounded-full bg-[var(--secondary)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--secondary-foreground)]"
+            >
+              ~{{ profil.vie_amoureuse.estimation_totale }} au total
+            </span>
+          </div>
+          <ul v-if="profil.relations_passees?.length" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <li
+              v-for="(r, i) in profil.relations_passees"
+              :key="`rel-${i}`"
+              class="flex items-start gap-3 rounded-lg bg-[var(--accent)]/30 px-3 py-2.5"
+            >
+              <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
+                <User :size="14" class="text-[var(--primary)]" />
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-[var(--foreground)]">
+                  {{ r.nom ? `${r.prenom} ${r.nom}` : r.prenom }}
+                </p>
+                <p class="text-xs text-[var(--muted-foreground)]">
+                  <template v-if="r.debut || r.fin">
+                    {{ r.debut || '?' }} → {{ r.fin || '?' }}
+                    <template v-if="relationDuree(r)">
+                      <span class="text-[var(--muted-foreground)]/80">
+                        · {{ relationDuree(r) }}
+                      </span>
+                    </template>
+                  </template>
+                  <template v-else-if="relationDuree(r)">{{ relationDuree(r) }}</template>
+                  <template v-if="(r.debut || r.fin || relationDuree(r)) && r.note"> · </template>
+                  <template v-if="r.note">{{ r.note }}</template>
+                </p>
+                <p
+                  v-if="r.apres?.length"
+                  class="mt-1.5 text-[11px] leading-relaxed text-[var(--muted-foreground)]/90"
+                >
+                  <span class="font-medium text-[var(--muted-foreground)]">Après · </span>
+                  <template v-for="(a, j) in r.apres" :key="`apres-${i}-${j}`">
+                    <template v-if="j > 0"> · </template>
+                    {{ suiteLabel(a) }}
+                  </template>
+                </p>
+              </div>
+            </li>
+          </ul>
         </section>
       </div>
   </PageShell>

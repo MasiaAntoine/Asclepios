@@ -16,6 +16,31 @@ export interface Animal {
   date_naissance?: string
 }
 
+export interface RelationSuite {
+  prenom?: string | null
+  nom?: string | null
+  /** plan_cul | tromperie | revue */
+  lien: string
+  note?: string | null
+}
+
+export interface RelationPassee {
+  prenom: string
+  nom?: string | null
+  duree?: string | null
+  debut?: string | null
+  fin?: string | null
+  note?: string | null
+  /** Personnes / plans après la relation (contexte, pas inventaire). */
+  apres?: RelationSuite[]
+}
+
+export interface VieAmoureuse {
+  note?: string
+  premiere_vers?: string
+  estimation_totale?: string
+}
+
 export interface CarteVitaleVerso {
   periode: string
   type: string
@@ -85,6 +110,8 @@ export interface Profil {
   fratrie: Personne[]
   entourage: Personne[]
   animaux: Animal[]
+  vie_amoureuse?: VieAmoureuse
+  relations_passees?: RelationPassee[]
 }
 
 export interface HistoriqueDose {

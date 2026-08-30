@@ -1,79 +1,92 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import logoIconUrl from '@/assets/logo-icon.png'
-import { Activity, BookOpen, Droplets, FileText, LayoutDashboard, MessageSquare, Scale, Settings, Stethoscope, UserRound } from '@lucide/vue'
+import {
+  Activity,
+  BookOpen,
+  Droplets,
+  FileText,
+  LayoutDashboard,
+  MessageSquare,
+  Scale,
+  ScrollText,
+  Settings,
+  Stethoscope,
+  UserRound,
+  type LucideIcon,
+} from '@lucide/vue'
+
+interface NavItem {
+  label: string
+  icon: LucideIcon
+  to: string
+  name: string
+  badge?: string
+}
+
+interface NavSection {
+  label: string | null
+  items: NavItem[]
+}
 
 const route = useRoute()
 const router = useRouter()
 
-const navItems = [
+const navSections: NavSection[] = [
   {
-    label: 'Tableau de bord',
-    icon: LayoutDashboard,
-    to: '/',
-    name: 'dashboard',
+    label: null,
+    items: [
+      { label: 'Tableau de bord', icon: LayoutDashboard, to: '/', name: 'dashboard' },
+    ],
   },
   {
-    label: 'Assistant',
-    icon: MessageSquare,
-    to: '/assistant',
-    name: 'chat',
+    label: 'Asclepios',
+    items: [
+      {
+        label: 'Discuter',
+        icon: MessageSquare,
+        to: '/assistant',
+        name: 'chat',
+        badge: 'IA',
+      },
+    ],
   },
   {
-    label: 'Profil',
-    icon: UserRound,
-    to: '/profil',
-    name: 'profile',
+    label: 'Dossier',
+    items: [
+      { label: 'Profil', icon: UserRound, to: '/profil', name: 'profile' },
+      { label: 'Médecins', icon: Stethoscope, to: '/medecins', name: 'doctors' },
+      { label: 'Médicaments', icon: BookOpen, to: '/meds', name: 'meds' },
+    ],
   },
   {
-    label: 'Rapports',
-    icon: FileText,
-    to: '/rapports',
-    name: 'reports',
-  },
-  {
-    label: 'Poids',
-    icon: Scale,
-    to: '/poids',
-    name: 'weight',
-  },
-  {
-    label: 'Prise de sang',
-    icon: Droplets,
-    to: '/prise-de-sang',
-    name: 'prise-de-sang',
+    label: 'Documents',
+    items: [
+      { label: 'Rapports', icon: FileText, to: '/rapports', name: 'reports' },
+      { label: 'Ordonnances', icon: ScrollText, to: '/ordonnances', name: 'ordonnances' },
+      { label: 'Prise de sang', icon: Droplets, to: '/prise-de-sang', name: 'prise-de-sang' },
+    ],
   },
   {
     label: 'Suivi',
-    icon: Activity,
-    to: '/suivi',
-    name: 'suivi',
+    items: [
+      { label: 'Poids', icon: Scale, to: '/poids', name: 'weight' },
+      { label: 'Suivi', icon: Activity, to: '/suivi', name: 'suivi' },
+    ],
   },
   {
-    label: 'Médicaments',
-    icon: BookOpen,
-    to: '/meds',
-    name: 'meds',
-  },
-  {
-    label: 'Médecins',
-    icon: Stethoscope,
-    to: '/medecins',
-    name: 'doctors',
-  },
-  {
-    label: 'Paramètres',
-    icon: Settings,
-    to: '/settings',
-    name: 'settings',
+    label: 'Système',
+    items: [
+      { label: 'Paramètres', icon: Settings, to: '/settings', name: 'settings' },
+    ],
   },
 ]
 
 const isActive = (to: string) =>
   to === '/' ? route.path === '/' : route.path.startsWith(to)
 
-function navigate(item: typeof navItems[0]) {
-  router.push(item.to)
+function navigate(item: NavItem) {
+  void router.push(item.to)
 }
 </script>
 
@@ -93,28 +106,52 @@ function navigate(item: typeof navItems[0]) {
     </div>
 
     <!-- Navigation -->
-    <nav class="flex flex-1 flex-col gap-1 p-3 overflow-y-auto">
-      <button
-        v-for="item in navItems"
-        :key="item.name"
-        @click="navigate(item)"
-        :class="[
-          'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-          isActive(item.to)
-            ? 'bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm'
-            : 'text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
-        ]"
+    <nav class="flex flex-1 flex-col gap-5 overflow-y-auto p-3">
+      <div
+        v-for="(section, sIdx) in navSections"
+        :key="section.label ?? `section-${sIdx}`"
+        class="flex flex-col gap-1"
       >
-        <component
-          :is="item.icon"
-          :size="18"
+        <p
+          v-if="section.label"
+          class="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]"
+        >
+          {{ section.label }}
+        </p>
+        <button
+          v-for="item in section.items"
+          :key="item.name"
+          type="button"
           :class="[
-            'shrink-0 transition-transform group-hover:scale-105',
-            isActive(item.to) ? 'text-[var(--primary-foreground)]' : '',
+            'group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all',
+            isActive(item.to)
+              ? 'bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm'
+              : 'text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
           ]"
-        />
-        <span>{{ item.label }}</span>
-      </button>
+          @click="navigate(item)"
+        >
+          <component
+            :is="item.icon"
+            :size="17"
+            :class="[
+              'shrink-0 transition-transform group-hover:scale-105',
+              isActive(item.to) ? 'text-[var(--primary-foreground)]' : '',
+            ]"
+          />
+          <span class="flex-1 text-left">{{ item.label }}</span>
+          <span
+            v-if="item.badge"
+            :class="[
+              'rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+              isActive(item.to)
+                ? 'bg-white/20 text-[var(--primary-foreground)]'
+                : 'bg-[var(--primary)]/12 text-[var(--primary)]',
+            ]"
+          >
+            {{ item.badge }}
+          </span>
+        </button>
+      </div>
     </nav>
 
     <!-- Footer -->

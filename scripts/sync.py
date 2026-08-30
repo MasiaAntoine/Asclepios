@@ -28,6 +28,7 @@ META_SHA = "sha256"
 # Dossiers attendus même vides (créés localement, pas stockés sur OVH).
 CANONICAL_DIRS = (
     "prise-de-sang",
+    "ordonnances",
     "medicaments",
     "rapports",
     "traumas",

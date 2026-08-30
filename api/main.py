@@ -49,7 +49,9 @@ _SCRIPT_BIO2   = SCRIPTS_DIR / "rapport_thyroide_levothyrox.py"
 _SCRIPT_RX     = SCRIPTS_DIR / "rapport_traitements.py"
 _SCRIPT_SYNC   = PROJECT_SCRIPTS_DIR / "sync.py"
 _SCRIPT_PARSE_LAB = SCRIPTS_DIR / "parse_lab_pdf.py"
+_SCRIPT_PARSE_ORD = SCRIPTS_DIR / "parse_ordonnance_pdf.py"
 _PDS_DIR = DATA_DIR / "prise-de-sang"
+_ORD_DIR = DATA_DIR / "ordonnances"
 
 # ── Fichier template IA (chargé une fois au démarrage) ──────────────────────
 
@@ -463,6 +465,20 @@ def _load_parse_lab():
     return mod
 
 
+def _load_parse_ordonnance():
+    """Charge le module parse_ordonnance_pdf depuis data/scripts."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "parse_ordonnance_pdf", _SCRIPT_PARSE_ORD
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("parse_ordonnance_pdf.py introuvable")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 @app.get("/api/labs/pdfs")
 def list_lab_pdfs() -> dict:
     """Liste les PDF de prise de sang."""
@@ -541,6 +557,105 @@ async def upload_lab_pdf(file: UploadFile = File(...)):
             mod.parse_with_cache(final_path, force=True)
         except Exception:
             pass
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Enregistrement impossible : {exc}") from exc
+
+    async def stream() -> AsyncGenerator[bytes, None]:
+        yield f"data: \u2713 PDF enregistré : {final_path.name}\n\n".encode()
+        yield f"data: ID:{final_id}\n\n".encode()
+        yield "data: Push OVH (nouveaux / modifiés uniquement)…\n\n".encode()
+        async for chunk in _push_stream():
+            yield chunk
+        yield b"data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+# ── Ordonnances PDF ───────────────────────────────────────────────────────────
+
+
+@app.get("/api/ordonnances/pdfs")
+def list_ordonnance_pdfs() -> dict:
+    """Liste les PDF d'ordonnances."""
+    try:
+        mod = _load_parse_ordonnance()
+        items = mod.list_ordonnance_pdfs(_ORD_DIR)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"items": items}
+
+
+@app.get("/api/ordonnances/pdfs/{pdf_id}")
+def get_ordonnance_pdf_detail(pdf_id: str, force: bool = False) -> dict:
+    """Détail parsé d'une ordonnance PDF (cache JSON)."""
+    try:
+        mod = _load_parse_ordonnance()
+        path = mod.resolve_pdf(pdf_id, _ORD_DIR)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF introuvable") from None
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        data = mod.parse_with_cache(path, force=force)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Parsing impossible : {exc}") from exc
+
+    items = mod.list_ordonnance_pdfs(_ORD_DIR)
+    ids = [i["id"] for i in items]
+    idx = ids.index(path.stem) if path.stem in ids else -1
+    data["navigation"] = {
+        "prev_id": ids[idx + 1] if 0 <= idx < len(ids) - 1 else None,
+        "next_id": ids[idx - 1] if idx > 0 else None,
+        "index": idx,
+        "total": len(ids),
+    }
+    data["id"] = path.stem
+    return data
+
+
+@app.get("/api/ordonnances/pdfs/{pdf_id}/file")
+def download_ordonnance_pdf_file(pdf_id: str):
+    """Télécharge le PDF source d'ordonnance."""
+    try:
+        mod = _load_parse_ordonnance()
+        path = mod.resolve_pdf(pdf_id, _ORD_DIR)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="PDF introuvable") from None
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.post("/api/ordonnances/pdfs/upload")
+async def upload_ordonnance_pdf(file: UploadFile = File(...)):
+    """Enregistre un PDF d'ordonnance, le parse, puis push OVH."""
+    filename = file.filename or "upload.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Seuls les fichiers PDF sont acceptés")
+
+    raw = await file.read()
+    if not raw or len(raw) < 100:
+        raise HTTPException(status_code=400, detail="Fichier PDF vide ou invalide")
+    if len(raw) > 40 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="PDF trop volumineux (max 40 Mo)")
+
+    mod = _load_parse_ordonnance()
+    try:
+        final_path = mod.save_uploaded_pdf(raw, filename, _ORD_DIR)
+        final_id = final_path.stem
+        try:
+            mod.parse_with_cache(final_path, force=True)
+        except Exception:
+            pass
+    except mod.DuplicateOrdonnanceError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Déjà importé : {exc.existing.name}",
+        ) from None
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Enregistrement impossible : {exc}") from exc
 
