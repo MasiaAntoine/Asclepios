@@ -7,6 +7,10 @@ export interface Personne {
   date_naissance?: string
   lien?: string
   personne_de_confiance?: boolean
+  /** Chemin relatif sous data/ (ex. personnes/eva-masia.png) */
+  photo?: string | null
+  /** Fichier MD dans data/personnes/ */
+  dossier?: string | null
 }
 
 export interface Animal {
@@ -14,6 +18,8 @@ export interface Animal {
   espece: string
   race?: string
   date_naissance?: string
+  photo?: string | null
+  dossier?: string | null
 }
 
 export interface RelationSuite {

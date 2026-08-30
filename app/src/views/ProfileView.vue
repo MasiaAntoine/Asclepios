@@ -41,6 +41,13 @@ async function onProfileSaved() {
 }
 
 const photoFailed = ref(false)
+const avatarFailed = ref<Record<string, boolean>>({})
+
+function personPhotoSrc(photo: string | null | undefined): string | null {
+  if (!photo) return null
+  if (photo.startsWith('http')) return photo
+  return dataUrl(photo)
+}
 
 const fullName = computed(() =>
   profil.value ? `${profil.value.prenom} ${profil.value.nom}` : '',
@@ -656,11 +663,35 @@ function eventClass(e: string) {
             </h3>
             <ul class="space-y-3">
               <li class="flex items-start gap-3">
-                <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
-                  <User :size="14" class="text-[var(--primary)]" />
+                <div
+                  class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--secondary)] ring-1 ring-[var(--border)]"
+                >
+                  <img
+                    v-if="personPhotoSrc(profil.parents.pere.photo) && !avatarFailed['pere']"
+                    :src="personPhotoSrc(profil.parents.pere.photo)!"
+                    :alt="profil.parents.pere.prenom"
+                    class="h-full w-full object-cover"
+                    @error="avatarFailed['pere'] = true"
+                  />
+                  <div
+                    v-else
+                    class="flex h-full w-full items-center justify-center"
+                  >
+                    <User :size="14" class="text-[var(--primary)]" />
+                  </div>
                 </div>
-                <div>
-                  <p class="text-sm font-medium">{{ profil.parents.pere.prenom }} {{ profil.parents.pere.nom }}</p>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-sm font-medium">{{ profil.parents.pere.prenom }} {{ profil.parents.pere.nom }}</p>
+                    <RouterLink
+                      v-if="profil.parents.pere.dossier"
+                      :to="{ name: 'personne-dossier', params: { slug: dossierSlug(profil.parents.pere.dossier) } }"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary)] transition hover:bg-[var(--secondary)]"
+                    >
+                      <FileText :size="11" />
+                      Dossier
+                    </RouterLink>
+                  </div>
                   <p class="text-xs text-[var(--muted-foreground)]">
                     Père
                     <template v-if="ageLabel(profil.parents.pere.date_naissance)">
@@ -670,11 +701,35 @@ function eventClass(e: string) {
                 </div>
               </li>
               <li class="flex items-start gap-3">
-                <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
-                  <User :size="14" class="text-[var(--primary)]" />
+                <div
+                  class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--secondary)] ring-1 ring-[var(--border)]"
+                >
+                  <img
+                    v-if="personPhotoSrc(profil.parents.mere.photo) && !avatarFailed['mere']"
+                    :src="personPhotoSrc(profil.parents.mere.photo)!"
+                    :alt="profil.parents.mere.prenom"
+                    class="h-full w-full object-cover"
+                    @error="avatarFailed['mere'] = true"
+                  />
+                  <div
+                    v-else
+                    class="flex h-full w-full items-center justify-center"
+                  >
+                    <User :size="14" class="text-[var(--primary)]" />
+                  </div>
                 </div>
-                <div>
-                  <p class="text-sm font-medium">{{ profil.parents.mere.prenom }} {{ profil.parents.mere.nom }}</p>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-sm font-medium">{{ profil.parents.mere.prenom }} {{ profil.parents.mere.nom }}</p>
+                    <RouterLink
+                      v-if="profil.parents.mere.dossier"
+                      :to="{ name: 'personne-dossier', params: { slug: dossierSlug(profil.parents.mere.dossier) } }"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary)] transition hover:bg-[var(--secondary)]"
+                    >
+                      <FileText :size="11" />
+                      Dossier
+                    </RouterLink>
+                  </div>
                   <p class="text-xs text-[var(--muted-foreground)]">
                     Mère
                     <template v-if="ageLabel(profil.parents.mere.date_naissance)">
@@ -688,11 +743,35 @@ function eventClass(e: string) {
                 :key="`fratrie-${i}`"
                 class="flex items-start gap-3"
               >
-                <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
-                  <User :size="14" class="text-[var(--primary)]" />
+                <div
+                  class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--secondary)] ring-1 ring-[var(--border)]"
+                >
+                  <img
+                    v-if="personPhotoSrc(s.photo) && !avatarFailed[`fratrie-${i}`]"
+                    :src="personPhotoSrc(s.photo)!"
+                    :alt="s.prenom"
+                    class="h-full w-full object-cover"
+                    @error="avatarFailed[`fratrie-${i}`] = true"
+                  />
+                  <div
+                    v-else
+                    class="flex h-full w-full items-center justify-center"
+                  >
+                    <User :size="14" class="text-[var(--primary)]" />
+                  </div>
                 </div>
-                <div>
-                  <p class="text-sm font-medium">{{ s.prenom }} {{ s.nom }}</p>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-sm font-medium">{{ s.prenom }} {{ s.nom }}</p>
+                    <RouterLink
+                      v-if="s.dossier"
+                      :to="{ name: 'personne-dossier', params: { slug: dossierSlug(s.dossier) } }"
+                      class="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary)] transition hover:bg-[var(--secondary)]"
+                    >
+                      <FileText :size="11" />
+                      Dossier
+                    </RouterLink>
+                  </div>
                   <p class="text-xs capitalize text-[var(--muted-foreground)]">
                     {{ s.lien }}
                     <template v-if="ageLabel(s.date_naissance)">
@@ -717,19 +796,43 @@ function eventClass(e: string) {
                   :key="`entourage-${i}`"
                   class="flex items-start gap-3"
                 >
-                  <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
-                    <User :size="14" class="text-[var(--primary)]" />
+                  <div
+                    class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--secondary)] ring-1 ring-[var(--border)]"
+                  >
+                    <img
+                      v-if="personPhotoSrc(p.photo) && !avatarFailed[`entourage-${i}`]"
+                      :src="personPhotoSrc(p.photo)!"
+                      :alt="p.prenom"
+                      class="h-full w-full object-cover"
+                      @error="avatarFailed[`entourage-${i}`] = true"
+                    />
+                    <div
+                      v-else
+                      class="flex h-full w-full items-center justify-center"
+                    >
+                      <User :size="14" class="text-[var(--primary)]" />
+                    </div>
                   </div>
                   <div class="min-w-0 flex-1">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <p class="text-sm font-medium">{{ p.prenom }} {{ p.nom }}</p>
-                      <span
-                        v-if="p.personne_de_confiance"
-                        class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="flex min-w-0 flex-wrap items-center gap-2">
+                        <p class="text-sm font-medium">{{ p.prenom }} {{ p.nom }}</p>
+                        <span
+                          v-if="p.personne_de_confiance"
+                          class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+                        >
+                          <Shield :size="10" />
+                          Personne de confiance
+                        </span>
+                      </div>
+                      <RouterLink
+                        v-if="p.dossier"
+                        :to="{ name: 'personne-dossier', params: { slug: dossierSlug(p.dossier) } }"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary)] transition hover:bg-[var(--secondary)]"
                       >
-                        <Shield :size="10" />
-                        Personne de confiance
-                      </span>
+                        <FileText :size="11" />
+                        Dossier
+                      </RouterLink>
                     </div>
                     <p class="text-xs capitalize text-[var(--muted-foreground)]">
                       {{ p.lien }}
@@ -753,11 +856,35 @@ function eventClass(e: string) {
                   :key="`animal-${i}`"
                   class="flex items-start gap-3"
                 >
-                  <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
-                    <PawPrint :size="14" class="text-[var(--primary)]" />
+                  <div
+                    class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-[var(--secondary)] ring-1 ring-[var(--border)]"
+                  >
+                    <img
+                      v-if="personPhotoSrc(a.photo) && !avatarFailed[`animal-${i}`]"
+                      :src="personPhotoSrc(a.photo)!"
+                      :alt="a.nom"
+                      class="h-full w-full object-cover"
+                      @error="avatarFailed[`animal-${i}`] = true"
+                    />
+                    <div
+                      v-else
+                      class="flex h-full w-full items-center justify-center"
+                    >
+                      <PawPrint :size="14" class="text-[var(--primary)]" />
+                    </div>
                   </div>
-                  <div>
-                    <p class="text-sm font-medium">{{ a.nom }}</p>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="text-sm font-medium">{{ a.nom }}</p>
+                      <RouterLink
+                        v-if="a.dossier"
+                        :to="{ name: 'personne-dossier', params: { slug: dossierSlug(a.dossier) } }"
+                        class="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary)] transition hover:bg-[var(--secondary)]"
+                      >
+                        <FileText :size="11" />
+                        Dossier
+                      </RouterLink>
+                    </div>
                     <p class="text-xs capitalize text-[var(--muted-foreground)]">
                       {{ a.espece }}{{ a.race ? ` · ${a.race}` : '' }}
                       <template v-if="ageLabel(a.date_naissance)">

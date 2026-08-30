@@ -126,6 +126,20 @@ def build_medical_context(data_dir: Path) -> str:
         if rel_blocks:
             add("Dossiers relations passées", "\n\n---\n\n".join(rel_blocks))
 
+    # Dossiers famille, entourage & animaux
+    personnes_dir = data_dir / "personnes"
+    if personnes_dir.is_dir():
+        personnes_blocks = []
+        for path in sorted(personnes_dir.glob("*.md")):
+            if path.name.lower() == "readme.md":
+                continue
+            raw = _read_text(path)
+            if not raw.strip():
+                continue
+            personnes_blocks.append(f"### {path.stem}\n\n{_truncate(raw, 5_000)}")
+        if personnes_blocks:
+            add("Dossiers famille, entourage & animaux", "\n\n---\n\n".join(personnes_blocks))
+
     # Rapports + traumas (plus récents d'abord)
     doc_blocks: list[str] = []
     for folder in ("rapports", "traumas"):

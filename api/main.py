@@ -1147,6 +1147,115 @@ async def generate_with_ai(body: GenerateRequest):
     return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
+# ── Édition de fichiers data (avec validation utilisateur) ──────────────────
+
+
+class DataEditRequest(BaseModel):
+    path: str
+    old_string: str
+    new_string: str
+
+
+@app.post("/api/data/apply-edit")
+async def apply_data_edit(body: DataEditRequest):
+    """Applique une modification à un fichier dans data/ et synchronise."""
+    # Sécurité : whitelist des répertoires autorisés
+    ALLOWED_DIRS = ("relations", "personnes", "rapports", "traumas")
+    
+    # Parse le path et valide
+    parts = Path(body.path).parts
+    if not parts or parts[0] not in ALLOWED_DIRS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Répertoire non autorisé. Autorisés : {', '.join(ALLOWED_DIRS)}",
+        )
+    
+    file_path = DATA_DIR / body.path
+    
+    # Empêcher les path traversal
+    try:
+        file_path = file_path.resolve()
+        if not str(file_path).startswith(str(DATA_DIR)):
+            raise HTTPException(status_code=403, detail="Accès refusé")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Chemin invalide")
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fichier introuvable")
+    
+    if not file_path.suffix in (".md", ".json"):
+        raise HTTPException(status_code=403, detail="Seuls .md et .json sont autorisés")
+
+    async def stream() -> AsyncGenerator[bytes, None]:
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            
+            # Vérifier que old_string existe et est unique
+            if body.old_string not in content:
+                yield "data: ✗ Texte introuvable dans le fichier\n\n".encode()
+                yield b"data: [ERROR]\n\n"
+                return
+            
+            if content.count(body.old_string) > 1:
+                yield "data: ✗ Texte non unique (trouvé plusieurs fois)\n\n".encode()
+                yield b"data: [ERROR]\n\n"
+                return
+            
+            # Appliquer la modification
+            updated = content.replace(body.old_string, body.new_string, 1)
+            file_path.write_text(updated, encoding="utf-8")
+            yield f"data: ✓ Fichier modifié : {body.path}\n\n".encode()
+        except Exception as exc:
+            yield f"data: ✗ Erreur : {exc}\n\n".encode()
+            yield b"data: [ERROR]\n\n"
+            return
+        
+        # Sync OVH
+        async for chunk in _stream_cmd("Sync", [PYTHON, str(_SCRIPT_SYNC), "push"]):
+            yield chunk
+        yield b"data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+class UpdateEditProposalStatusRequest(BaseModel):
+    conversation_id: str
+    message_id: str
+    proposal_index: int
+    status: str  # "applied", "rejected", "pending"
+
+
+@app.post("/api/data/update-edit-status")
+async def update_edit_proposal_status(body: UpdateEditProposalStatusRequest):
+    """Met à jour le statut d'une proposition d'édition dans l'historique du chat."""
+    if body.status not in ("applied", "rejected", "pending"):
+        raise HTTPException(status_code=400, detail="Statut invalide")
+    
+    try:
+        chat = _load_chat(body.conversation_id)
+    except HTTPException:
+        raise
+    
+    # Trouver le message
+    msg = next((m for m in chat.get("messages", []) if m.get("id") == body.message_id), None)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message introuvable")
+    
+    # Vérifier que le message a des edit_proposals
+    proposals = msg.get("edit_proposals", [])
+    if body.proposal_index < 0 or body.proposal_index >= len(proposals):
+        raise HTTPException(status_code=404, detail="Proposition introuvable")
+    
+    # Mettre à jour le statut
+    proposals[body.proposal_index]["status"] = body.status
+    proposals[body.proposal_index]["updated_at"] = _now_iso()
+    
+    # Sauvegarder
+    _save_chat(chat)
+    
+    return {"ok": True, "status": body.status}
+
+
 # ── Chat Asclepios (conversations persistées dans data/chats/) ───────────────
 
 _CHATS_DIR = DATA_DIR / "chats"
@@ -1163,6 +1272,21 @@ RÈGLES :
 - Tu n'es PAS un médecin : pas de diagnostic définitif ni d'ordonnance. Tu aides à comprendre, préparer une consultation, croiser les données.
 - Sois discret et respectueux (données très sensibles).
 - Si on te demande une synthèse, cite les dates et valeurs concrètes du contexte.
+
+ÉDITION DE FICHIERS :
+- Tu peux PROPOSER des modifications aux fichiers dans data/ (dossiers relations, rapports, profil, etc.).
+- Utilise UNIQUEMENT ce format JSON pour proposer une modification :
+  ```json:edit
+  {
+    "path": "relations/nom-fichier.md",
+    "description": "Ajout détail trauma",
+    "old_string": "texte exact existant (minimum 50 chars pour unicité)",
+    "new_string": "texte modifié"
+  }
+  ```
+- L'utilisateur verra un diff et pourra valider ou refuser.
+- N'édite QUE si l'utilisateur te le demande explicitement (ex: "mets à jour le dossier de X").
+- IMPORTANT : old_string doit être EXACT et assez long pour être unique dans le fichier.
 """
 
 
@@ -1276,6 +1400,32 @@ def _build_chat_prompt(message: str, history: list[dict], context: str) -> str:
         "Réponds maintenant en tant qu'Asclepios (sans préfixe « Asclepios: »), "
         "en tenant compte de TOUT l'historique de cette conversation."
     )
+
+
+def _extract_edit_proposals(text: str) -> tuple[str, list[dict]]:
+    """Extrait les blocs ```json:edit``` du texte et retourne (texte nettoyé, propositions)."""
+    proposals: list[dict] = []
+    pattern = re.compile(
+        r'```json:edit\s*\n(.*?)\n```',
+        re.DOTALL | re.MULTILINE
+    )
+    
+    def replace_match(m: re.Match) -> str:
+        try:
+            proposal = _json.loads(m.group(1))
+            # Validation basique
+            if all(k in proposal for k in ("path", "description", "old_string", "new_string")):
+                proposals.append(proposal)
+                # Supprimer complètement le bloc du texte
+                return ""
+        except Exception:
+            pass
+        return m.group(0)  # Garder tel quel si invalide
+    
+    cleaned = pattern.sub(replace_match, text).strip()
+    # Nettoyer les lignes vides multiples
+    cleaned = re.sub(r'\n\n\n+', '\n\n', cleaned)
+    return cleaned, proposals
 
 
 async def _chat_ai(prompt: str) -> str:
@@ -1560,16 +1710,26 @@ async def chat_with_asclepios(body: ChatRequest):
             yield f"data: Contexte prêt ({len(context)} caractères)\n\n".encode()
             yield "data: Appel au modèle IA…\n\n".encode()
             prompt = _build_chat_prompt(body.message, history, context)
-            answer = await _chat_ai(prompt)
+            raw_answer = await _chat_ai(prompt)
         except Exception as exc:
             yield f"data: Erreur : {exc}\n\n".encode()
             yield b"data: [ERROR]\n\n"
             return
 
-        if not answer:
+        if not raw_answer:
             yield "data: Erreur : réponse vide.\n\n".encode()
             yield b"data: [ERROR]\n\n"
             return
+
+        # Extraire les propositions d'edit
+        answer, edit_proposals = _extract_edit_proposals(raw_answer)
+
+        # Envoyer les propositions d'edit (ajouter le statut initial)
+        for idx, proposal in enumerate(edit_proposals):
+            proposal["status"] = "pending"
+            proposal["created_at"] = _now_iso()
+            proposal_json = _json.dumps(proposal, ensure_ascii=False)
+            yield f"data: EDIT_PROPOSAL:{proposal_json}\n\n".encode()
 
         yield b"data: [ANSWER_START]\n\n"
         chunk_size = 80
@@ -1587,6 +1747,9 @@ async def chat_with_asclepios(body: ChatRequest):
             "content": answer,
             "created_at": _now_iso(),
         }
+        # Sauvegarder les propositions d'édition dans l'historique
+        if edit_proposals:
+            assistant_msg["edit_proposals"] = edit_proposals
         chat["messages"].append(assistant_msg)
         chat["updated_at"] = _now_iso()
         try:

@@ -33,6 +33,7 @@ CANONICAL_DIRS = (
     "rapports",
     "traumas",
     "relations",
+    "personnes",
     "chats",
     "scripts",
 )

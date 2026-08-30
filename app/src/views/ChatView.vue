@@ -17,12 +17,25 @@ import {
 import logoIconUrl from "@/assets/logo-icon.png";
 import { useProfile } from "@/composables/useProfile";
 import PageShell from "@/components/PageShell.vue";
+import EditProposal from "@/components/EditProposal.vue";
+import DeleteConversationDialog from "@/components/DeleteConversationDialog.vue";
+
+interface EditProposalData {
+  path: string;
+  description: string;
+  old_string: string;
+  new_string: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 interface ChatMsg {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   created_at?: string;
+  editProposals?: EditProposalData[];
 }
 
 interface ConversationMeta {
@@ -59,6 +72,12 @@ const reportStatus = ref("");
 const error = ref<string | null>(null);
 const listEl = ref<HTMLElement | null>(null);
 let abortController: AbortController | null = null;
+
+// Delete dialog state
+const deleteDialogOpen = ref(false);
+const conversationToDelete = ref<{ id: string; title: string; isLinked: boolean } | null>(
+  null,
+);
 
 const canSend = computed(
   () =>
@@ -157,37 +176,56 @@ function startNewConversation() {
   reportStatus.value = "";
 }
 
-async function deleteConversation(id: string, ev?: Event) {
-  ev?.stopPropagation()
-  ev?.preventDefault()
-  if (running.value || generatingReport.value) return
-  const conv = conversations.value.find((c) => c.id === id)
-  if (conv?.report_id) {
-    error.value = 'Cette conversation est liée à un rapport : suppression impossible.'
-    return
-  }
-  if (!confirm(`Supprimer « ${conv?.title ?? id} » ?`)) return
+function openDeleteDialog(id: string, ev?: Event) {
+  ev?.stopPropagation();
+  ev?.preventDefault();
+  if (running.value || generatingReport.value) return;
+
+  const conv = conversations.value.find((c) => c.id === id);
+  if (!conv) return;
+
+  conversationToDelete.value = {
+    id: conv.id,
+    title: conv.title,
+    isLinked: !!conv.report_id,
+  };
+  deleteDialogOpen.value = true;
+}
+
+async function confirmDelete() {
+  if (!conversationToDelete.value) return;
+
+  const id = conversationToDelete.value.id;
 
   // Mise à jour immédiate de la liste (sans attendre le réseau)
-  const previous = [...conversations.value]
-  conversations.value = conversations.value.filter((c) => c.id !== id)
-  if (activeId.value === id) startNewConversation()
+  const previous = [...conversations.value];
+  conversations.value = conversations.value.filter((c) => c.id !== id);
+  if (activeId.value === id) startNewConversation();
 
   try {
-    const res = await fetch(`${API_BASE}/chats/${id}/delete`, { method: 'POST' })
+    const res = await fetch(`${API_BASE}/chats/${id}/delete`, { method: "POST" });
     if (res.status === 403) {
-      conversations.value = previous
-      error.value = 'Conversation liée à un rapport : suppression impossible.'
-      await loadConversations()
-      return
+      conversations.value = previous;
+      error.value = "Conversation liée à un rapport : suppression impossible.";
+      await loadConversations();
+      deleteDialogOpen.value = false;
+      return;
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    await loadConversations()
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await loadConversations();
+    deleteDialogOpen.value = false;
+    conversationToDelete.value = null;
   } catch (e) {
-    conversations.value = previous
-    error.value = e instanceof Error ? e.message : 'Suppression impossible'
-    await loadConversations()
+    conversations.value = previous;
+    error.value = e instanceof Error ? e.message : "Suppression impossible";
+    await loadConversations();
+    deleteDialogOpen.value = false;
   }
+}
+
+function cancelDelete() {
+  deleteDialogOpen.value = false;
+  conversationToDelete.value = null;
 }
 
 function upsertConversationMeta(
@@ -298,7 +336,12 @@ async function send() {
   messages.value.push(userMsg);
 
   const assistantId = `a-${Date.now()}`;
-  messages.value.push({ id: assistantId, role: "assistant", content: "" });
+  messages.value.push({
+    id: assistantId,
+    role: "assistant",
+    content: "",
+    editProposals: [],
+  });
 
   running.value = true;
   abortController = new AbortController();
@@ -355,6 +398,21 @@ async function send() {
         if (line.startsWith("TITLE:")) {
           const title = line.slice("TITLE:".length);
           if (activeId.value) upsertConversationMeta(activeId.value, title);
+          continue;
+        }
+        if (line.startsWith("EDIT_PROPOSAL:")) {
+          try {
+            const proposal = JSON.parse(
+              line.slice("EDIT_PROPOSAL:".length),
+            ) as EditProposalData;
+            const msg = messages.value.find((m) => m.id === assistantId);
+            if (msg) {
+              msg.editProposals = msg.editProposals || [];
+              msg.editProposals.push(proposal);
+            }
+          } catch {
+            // Ignore invalid JSON
+          }
           continue;
         }
         if (line === "[ANSWER_START]") {
@@ -427,7 +485,17 @@ onMounted(() => {
 
 <template>
   <PageShell flush no-scroll>
-  <div class="flex h-full overflow-hidden">
+    <!-- Delete Confirmation Dialog -->
+    <DeleteConversationDialog
+      v-if="conversationToDelete"
+      v-model:open="deleteDialogOpen"
+      :conversation-title="conversationToDelete.title"
+      :is-linked-to-report="conversationToDelete.isLinked"
+      @confirm="confirmDelete"
+      @cancel="cancelDelete"
+    />
+
+    <div class="flex h-full overflow-hidden">
     <aside
       class="flex w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
     >
@@ -488,7 +556,7 @@ onMounted(() => {
               type="button"
               class="shrink-0 rounded p-0.5 text-[var(--muted-foreground)] opacity-0 transition hover:text-red-600 group-hover:opacity-100"
               title="Supprimer"
-              @click="deleteConversation(c.id, $event)"
+              @click="openDeleteDialog(c.id, $event)"
             >
               <Trash2 :size="13" />
             </button>
@@ -605,29 +673,46 @@ onMounted(() => {
                 class="h-full w-full object-cover"
               />
             </div>
-            <div
-              class="min-w-0 max-w-[85%] overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed"
-              :class="
-                m.role === 'user'
-                  ? 'rounded-tr-md bg-[var(--primary)] text-[var(--primary-foreground)]'
-                  : 'rounded-tl-md border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]'
-              "
-            >
+            <div class="min-w-0 max-w-[85%] flex flex-col gap-2">
+              <!-- Edit proposals (shown first) -->
+              <template v-if="m.role === 'assistant' && m.editProposals?.length">
+                <EditProposal
+                  v-for="(proposal, pIdx) in m.editProposals"
+                  :key="`${m.id}-edit-${pIdx}`"
+                  :proposal="proposal"
+                  :conversation-id="activeId || undefined"
+                  :message-id="m.id"
+                  :proposal-index="pIdx"
+                  @applied="() => void loadConversations()"
+                  @rejected="() => {}"
+                />
+              </template>
+
+              <!-- Message content -->
               <div
-                v-if="m.role === 'assistant' && m.content"
-                class="prose prose-sm max-w-none overflow-x-auto prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
-                v-html="renderMd(m.content)"
-              />
-              <p v-else-if="m.content" class="whitespace-pre-wrap">
-                {{ m.content }}
-              </p>
-              <p
-                v-else
-                class="flex items-center gap-2 text-[var(--muted-foreground)]"
+                class="overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed"
+                :class="
+                  m.role === 'user'
+                    ? 'rounded-tr-md bg-[var(--primary)] text-[var(--primary-foreground)]'
+                    : 'rounded-tl-md border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]'
+                "
               >
-                <Loader :size="14" class="animate-spin" />
-                {{ statusLine || "Réflexion…" }}
-              </p>
+                <div
+                  v-if="m.role === 'assistant' && m.content"
+                  class="prose prose-sm max-w-none overflow-x-auto prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
+                  v-html="renderMd(m.content)"
+                />
+                <p v-else-if="m.content" class="whitespace-pre-wrap">
+                  {{ m.content }}
+                </p>
+                <p
+                  v-else
+                  class="flex items-center gap-2 text-[var(--muted-foreground)]"
+                >
+                  <Loader :size="14" class="animate-spin" />
+                  {{ statusLine || "Réflexion…" }}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -669,7 +754,7 @@ onMounted(() => {
           </div>
         </div>
       </div>
+      </div>
     </div>
-  </div>
   </PageShell>
 </template>
