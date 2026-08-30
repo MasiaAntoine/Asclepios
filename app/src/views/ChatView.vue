@@ -88,7 +88,9 @@ const activeTitle = computed(() => {
 });
 
 function renderMd(text: string): string {
-  return marked.parse(text, { gfm: true, breaks: true }) as string;
+  return (marked.parse(text, { gfm: true, breaks: true }) as string)
+    .replace(/<table>/g, '<div class="table-wrap"><table>')
+    .replace(/<\/table>/g, "</table></div>");
 }
 
 async function scrollToBottom() {
@@ -573,11 +575,11 @@ onMounted(() => {
       </div>
 
       <div ref="listEl" class="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div class="mx-auto flex max-w-3xl flex-col gap-4">
+        <div class="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
           <div
             v-for="m in messages"
             :key="m.id"
-            class="flex gap-3"
+            class="flex min-w-0 gap-3"
             :class="m.role === 'user' ? 'flex-row-reverse' : ''"
           >
             <div
@@ -604,7 +606,7 @@ onMounted(() => {
               />
             </div>
             <div
-              class="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed"
+              class="min-w-0 max-w-[85%] overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed"
               :class="
                 m.role === 'user'
                   ? 'rounded-tr-md bg-[var(--primary)] text-[var(--primary-foreground)]'
@@ -613,7 +615,7 @@ onMounted(() => {
             >
               <div
                 v-if="m.role === 'assistant' && m.content"
-                class="prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
+                class="prose prose-sm max-w-none overflow-x-auto prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
                 v-html="renderMd(m.content)"
               />
               <p v-else-if="m.content" class="whitespace-pre-wrap">
