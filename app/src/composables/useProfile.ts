@@ -19,7 +19,7 @@ export interface Animal {
 export interface RelationSuite {
   prenom?: string | null
   nom?: string | null
-  /** plan_cul | tromperie | revue */
+  /** sexuelle_ponctuelle | tromperie | revue (legacy: plan_cul) */
   lien: string
   note?: string | null
 }
@@ -31,6 +31,8 @@ export interface RelationPassee {
   debut?: string | null
   fin?: string | null
   note?: string | null
+  /** Fichier MD dans data/relations/ (contexte narratif). */
+  dossier?: string | null
   /** Personnes / plans après la relation (contexte, pas inventaire). */
   apres?: RelationSuite[]
 }

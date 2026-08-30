@@ -15,6 +15,11 @@ const router = createRouter({
       component: () => import('@/views/ProfileView.vue'),
     },
     {
+      path: '/profil/relations/:slug',
+      name: 'relation-dossier',
+      component: () => import('@/views/RelationDossierView.vue'),
+    },
+    {
       path: '/rapports',
       name: 'reports',
       component: ReportsView,

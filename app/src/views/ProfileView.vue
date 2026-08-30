@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useProfile } from '@/composables/useProfile'
 import type { RelationSuite } from '@/composables/useProfile'
 import {
   Cigarette,
   CreditCard,
   ExternalLink,
+  FileText,
   Heart,
   PawPrint,
   Pill,
@@ -93,9 +95,10 @@ function relationDuree(r: {
 }
 
 const LIEN_LABELS: Record<string, string> = {
-  plan_cul: 'plan cul',
+  plan_cul: 'relation sexuelle ponctuelle', // legacy
+  sexuelle_ponctuelle: 'relation sexuelle ponctuelle',
   tromperie: 'tromperie',
-  revue: 'revue',
+  revue: 'recontact',
 }
 
 function suiteLabel(a: RelationSuite): string {
@@ -107,6 +110,10 @@ function suiteLabel(a: RelationSuite): string {
   const lien = LIEN_LABELS[a.lien] || a.lien
   const extra = a.prenom && a.note ? ` (${a.note})` : ''
   return `${name} (${lien})${extra}`
+}
+
+function dossierSlug(file: string): string {
+  return file.replace(/\.md$/i, '')
 }
 
 const mutuelleDocUrl = computed(() => {
@@ -746,10 +753,20 @@ function eventClass(e: string) {
               <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)]">
                 <User :size="14" class="text-[var(--primary)]" />
               </div>
-              <div class="min-w-0">
-                <p class="text-sm font-medium text-[var(--foreground)]">
-                  {{ r.nom ? `${r.prenom} ${r.nom}` : r.prenom }}
-                </p>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <p class="text-sm font-medium text-[var(--foreground)]">
+                    {{ r.nom ? `${r.prenom} ${r.nom}` : r.prenom }}
+                  </p>
+                  <RouterLink
+                    v-if="r.dossier"
+                    :to="{ name: 'relation-dossier', params: { slug: dossierSlug(r.dossier) } }"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--card)] px-2 py-0.5 text-[10px] font-medium text-[var(--primary)] transition hover:bg-[var(--secondary)]"
+                  >
+                    <FileText :size="11" />
+                    Dossier
+                  </RouterLink>
+                </div>
                 <p class="text-xs text-[var(--muted-foreground)]">
                   <template v-if="r.debut || r.fin">
                     {{ r.debut || '?' }} → {{ r.fin || '?' }}

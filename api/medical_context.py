@@ -112,6 +112,20 @@ def build_medical_context(data_dir: Path) -> str:
     if doctors:
         add("Médecins", json.dumps(doctors, ensure_ascii=False, indent=2))
 
+    # Dossiers relations passées (contexte affectif / patterns)
+    rel_dir = data_dir / "relations"
+    if rel_dir.is_dir():
+        rel_blocks = []
+        for path in sorted(rel_dir.glob("*.md")):
+            if path.name.lower() == "readme.md":
+                continue
+            raw = _read_text(path)
+            if not raw.strip():
+                continue
+            rel_blocks.append(f"### {path.stem}\n\n{_truncate(raw, 5_000)}")
+        if rel_blocks:
+            add("Dossiers relations passées", "\n\n---\n\n".join(rel_blocks))
+
     # Rapports + traumas (plus récents d'abord)
     doc_blocks: list[str] = []
     for folder in ("rapports", "traumas"):
