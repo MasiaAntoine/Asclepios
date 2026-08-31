@@ -8,6 +8,7 @@ Documentation technique et guides d'utilisation pour le dossier médical personn
 
 - **[Édition assistée par l'IA](edition-assistee.md)** — Permet à l'assistant Asclepios de proposer des modifications aux fichiers `data/` avec validation utilisateur
 - **[Persistance des propositions d'édition](persistance-edit-proposals.md)** — Historique complet des modifications proposées, appliquées et refusées
+- **[Personnalité conversationnelle](personnalite-conversationnelle.md)** — Couche indépendante qui définit *comment* Asclepios parle (empathie sans complaisance, capacité à challenger, gestion de l'incertitude…)
 
 ### UI/UX
 

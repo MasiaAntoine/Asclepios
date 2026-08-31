@@ -129,6 +129,23 @@ def build_medical_context(data_dir: Path) -> str:
     # Dossiers famille, entourage & animaux
     personnes_dir = data_dir / "personnes"
     if personnes_dir.is_dir():
+        # Inventaire des photos (pour que l'IA sache qu'elles existent et où)
+        photo_lines: list[str] = []
+        for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
+            for path in sorted(personnes_dir.glob(ext)):
+                photo_lines.append(
+                    f"- `{path.relative_to(data_dir).as_posix()}` "
+                    f"(ouvrir ce fichier pour voir / confirmer l'apparence)"
+                )
+        if photo_lines:
+            add(
+                "Photos famille / entourage / animaux",
+                "Fichiers images disponibles dans data/personnes/. "
+                "Les descriptions physiques sont aussi dans la section « Apparence » "
+                "de chaque dossier .md ci-dessous.\n\n"
+                + "\n".join(photo_lines),
+            )
+
         personnes_blocks = []
         for path in sorted(personnes_dir.glob("*.md")):
             if path.name.lower() == "readme.md":

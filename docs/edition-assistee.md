@@ -16,6 +16,7 @@ L'assistant Asclepios peut **proposer des modifications** aux fichiers dans `dat
 
 - **Validation obligatoire** : aucune modification sans ton accord
 - **Répertoires autorisés uniquement** : `relations/`, `personnes/`, `rapports/`, `traumas/`
+- **Fichiers racine autorisés** : `assistant-personality.md` (personnalité conversationnelle)
 - **Fichiers autorisés uniquement** : `.md` et `.json`
 - **Protection path traversal** : impossible de sortir de `data/`
 - **Unicité garantie** : `old_string` doit être unique dans le fichier
@@ -117,6 +118,6 @@ Voir [Persistance des propositions](persistance-edit-proposals.md) pour les dét
 - `diff` package : calcul des diffs ligne par ligne
 
 **Instructions système :**
-- Ajoutées dans `_CHAT_SYSTEM` (prompt système du chat)
+- Ajoutées dans `_MEDICAL_SYSTEM` (prompt système, couche médicale)
 - L'IA sait quand et comment proposer des edits
 - Format strict pour garantir la parsing

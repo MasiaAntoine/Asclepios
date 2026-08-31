@@ -24,6 +24,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+# Import robuste aux 2 modes de lancement :
+# - Docker : `uvicorn api.main:app` (PYTHONPATH=/workspace) → package `api.*`
+# - Local dev.sh : `uvicorn main:app` depuis api/ → module direct
+try:
+    from api.conversation_behavior import ConversationBehaviorProfile
+except ModuleNotFoundError:
+    from conversation_behavior import ConversationBehaviorProfile
+
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1159,15 +1167,20 @@ class DataEditRequest(BaseModel):
 @app.post("/api/data/apply-edit")
 async def apply_data_edit(body: DataEditRequest):
     """Applique une modification à un fichier dans data/ et synchronise."""
-    # Sécurité : whitelist des répertoires autorisés
+    # Sécurité : whitelist des répertoires + whitelist de fichiers racine autorisés
     ALLOWED_DIRS = ("relations", "personnes", "rapports", "traumas")
-    
-    # Parse le path et valide
+    ALLOWED_ROOT_FILES = ("assistant-personality.md",)
+
     parts = Path(body.path).parts
-    if not parts or parts[0] not in ALLOWED_DIRS:
+    is_root_file = len(parts) == 1 and parts[0] in ALLOWED_ROOT_FILES
+    is_allowed_dir = bool(parts) and parts[0] in ALLOWED_DIRS
+    if not (is_root_file or is_allowed_dir):
         raise HTTPException(
             status_code=403,
-            detail=f"Répertoire non autorisé. Autorisés : {', '.join(ALLOWED_DIRS)}",
+            detail=(
+                f"Emplacement non autorisé. Répertoires : {', '.join(ALLOWED_DIRS)}. "
+                f"Fichiers racine : {', '.join(ALLOWED_ROOT_FILES)}."
+            ),
         )
     
     file_path = DATA_DIR / body.path
@@ -1260,34 +1273,58 @@ async def update_edit_proposal_status(body: UpdateEditProposalStatusRequest):
 
 _CHATS_DIR = DATA_DIR / "chats"
 
-_CHAT_SYSTEM = """Tu es Asclepios, l'assistant IA du dossier médical personnel de l'utilisateur.
-Tu as accès au contexte complet fourni (profil, poids, analyses, traitements, médicaments, médecins, rapports)
-ET à l'historique COMPLET de cette conversation.
+# ── Couche 1 : moteur médical (sécurité, données, outils) ──────────────────
+# Ce bloc ne contient QUE les règles techniques et de sécurité médicale.
+# La personnalité conversationnelle est gérée séparément par
+# `conversation_behavior.ConversationBehaviorProfile` (voir data/assistant-personality.md).
 
-RÈGLES :
-- Réponds en français, de façon claire, empathique et structurée (Markdown si utile).
-- Cette conversation est continue : tu DOIS te souvenir de tout ce qui a déjà été dit dans l'HISTORIQUE (questions, réponses, précisions).
-- Base-toi sur le contexte médical + l'historique. Ne contredis pas ce que tu as déjà affirmé sauf si les données du dossier le corrigent.
+_MEDICAL_SYSTEM = """Tu es Asclepios, l'assistant IA du dossier médical personnel de l'utilisateur.
+Tu as accès au contexte fourni (profil, poids, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations)
+ET à l'historique COMPLET de cette conversation.
+Tu travailles avec le répertoire data/ comme répertoire de travail : tu PEUX ouvrir les fichiers images (jpg/png) listés dans le contexte.
+
+CADRE MÉDICAL :
+- Réponds en français.
+- Cette conversation est continue : tiens compte de TOUT l'HISTORIQUE (questions, réponses, précisions).
+- Base-toi sur le contexte médical + l'historique. Ne te contredis pas sauf si les données du dossier le corrigent.
 - Si une info manque, dis-le clairement plutôt qu'inventer.
 - Tu n'es PAS un médecin : pas de diagnostic définitif ni d'ordonnance. Tu aides à comprendre, préparer une consultation, croiser les données.
 - Sois discret et respectueux (données très sensibles).
-- Si on te demande une synthèse, cite les dates et valeurs concrètes du contexte.
+- Pour une synthèse, cite les dates et valeurs concrètes du contexte.
+
+PHOTOS / APPARENCE :
+- Les photos de famille, entourage et animaux sont dans data/personnes/.
+- Quand c'est pertinent, les images sont ATTACHÉES à ton message (vision multimodale) : tu les VOIS réellement.
+- Chaque dossier personnes/*.md a aussi une section « Apparence » utile en complément.
+- Si on te demande de décrire un visage et que des images sont jointes : base-toi d'abord sur ce que tu VOIS.
+- Ne dis JAMAIS que tu « ne peux pas voir » les photos quand des images sont jointes au message.
 
 ÉDITION DE FICHIERS :
-- Tu peux PROPOSER des modifications aux fichiers dans data/ (dossiers relations, rapports, profil, etc.).
+- Tu peux PROPOSER des modifications aux fichiers dans data/ (relations, personnes, rapports, etc.).
 - Utilise UNIQUEMENT ce format JSON pour proposer une modification :
   ```json:edit
   {
-    "path": "relations/nom-fichier.md",
-    "description": "Ajout détail trauma",
+    "path": "personnes/prenom-nom.md",
+    "description": "Ajout détail apparence",
     "old_string": "texte exact existant (minimum 50 chars pour unicité)",
     "new_string": "texte modifié"
   }
   ```
 - L'utilisateur verra un diff et pourra valider ou refuser.
-- N'édite QUE si l'utilisateur te le demande explicitement (ex: "mets à jour le dossier de X").
+- N'édite QUE si l'utilisateur te le demande explicitement.
 - IMPORTANT : old_string doit être EXACT et assez long pour être unique dans le fichier.
+
+STYLE :
+- Le bloc PROFIL COMPORTEMENTAL (au-dessus) décrit TA façon de parler, à appliquer
+  systématiquement, tout le temps, à chaque réponse. Ce n'est pas optionnel.
+- En cas de conflit entre les règles médicales de ce bloc et le PROFIL COMPORTEMENTAL,
+  seule la sécurité médicale et psychologique peut le surclasser, et uniquement pour
+  la partie concernée. Le reste du profil reste actif.
 """
+
+
+# ── Couche 2 : personnalité conversationnelle (fichier éditable) ───────────
+_BEHAVIOR_PROFILE = ConversationBehaviorProfile(DATA_DIR)
 
 
 class ChatMessage(BaseModel):
@@ -1387,9 +1424,18 @@ def _format_history_block(history: list[dict]) -> str:
 
 def _build_chat_prompt(message: str, history: list[dict], context: str) -> str:
     history_block = _format_history_block(history)
+    behavior = _BEHAVIOR_PROFILE.build(message)
+
+    profile_section = f"{behavior.profile_block}\n\n" if behavior.profile_block else ""
 
     return (
-        f"{_CHAT_SYSTEM}\n\n"
+        # 1. Personnalité EN PREMIER — position de plus forte attention pour le modèle.
+        f"{profile_section}"
+        # 2. Couche médicale / technique.
+        f"{_MEDICAL_SYSTEM}\n\n"
+        # 3. Précision contextuelle (hint additif au profil).
+        f"{behavior.hint_block}\n\n"
+        # 4. Données.
         f"===== CONTEXTE MÉDICAL =====\n{context}\n"
         f"===== FIN CONTEXTE =====\n\n"
         f"===== HISTORIQUE COMPLET DE CETTE CONVERSATION =====\n"
@@ -1397,8 +1443,9 @@ def _build_chat_prompt(message: str, history: list[dict], context: str) -> str:
         f"===== FIN HISTORIQUE =====\n\n"
         f"Nouvelle question de l'utilisateur (à traiter en continuité avec l'historique ci-dessus) :\n"
         f"{message.strip()}\n\n"
-        "Réponds maintenant en tant qu'Asclepios (sans préfixe « Asclepios: »), "
-        "en tenant compte de TOUT l'historique de cette conversation."
+        # 5. Rappel final juste avant la génération.
+        "Réponds maintenant en tant qu'Asclepios (sans préfixe « Asclepios: »). "
+        f"{behavior.reminder_line}"
     )
 
 
@@ -1428,7 +1475,149 @@ def _extract_edit_proposals(text: str) -> tuple[str, list[dict]]:
     return cleaned, proposals
 
 
-async def _chat_ai(prompt: str) -> str:
+def _normalize_for_match(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return text.lower()
+
+
+def _person_photo_catalog() -> list[tuple[list[str], Path]]:
+    """[(aliases, path), ...] depuis profil.json + fichiers présents."""
+    profil_path = DATA_DIR / "profil.json"
+    entries: list[tuple[list[str], Path]] = []
+    if not profil_path.exists():
+        return entries
+    try:
+        profil = _json.loads(profil_path.read_text(encoding="utf-8"))
+    except Exception:
+        return entries
+
+    def add_person(aliases: list[str], photo: str | None) -> None:
+        if not photo:
+            return
+        path = DATA_DIR / photo
+        if path.is_file():
+            entries.append((aliases, path))
+
+    parents = profil.get("parents") or {}
+    for role, person in (("pere", parents.get("pere")), ("mere", parents.get("mere"))):
+        if not isinstance(person, dict):
+            continue
+        prenom = (person.get("prenom") or "").strip()
+        nom = (person.get("nom") or "").strip()
+        aliases = [a for a in (prenom, nom, f"{prenom} {nom}".strip(), role) if a]
+        if role == "pere":
+            aliases.extend(["papa", "père", "pere"])
+        if role == "mere":
+            aliases.extend(["maman", "mère", "mere"])
+        add_person(aliases, person.get("photo"))
+
+    for s in profil.get("fratrie") or []:
+        if not isinstance(s, dict):
+            continue
+        prenom = (s.get("prenom") or "").strip()
+        nom = (s.get("nom") or "").strip()
+        aliases = [a for a in (prenom, f"{prenom} {nom}".strip()) if a]
+        lien = (s.get("lien") or "").lower()
+        if "frère" in lien or "frere" in lien:
+            aliases.extend(["frère", "frere", "petit frère", "petit frere"])
+        if "sœur" in lien or "soeur" in lien:
+            aliases.extend(["sœur", "soeur", "petite sœur", "petite soeur"])
+        add_person(aliases, s.get("photo"))
+
+    for e in profil.get("entourage") or []:
+        if not isinstance(e, dict):
+            continue
+        prenom = (e.get("prenom") or "").strip()
+        nom = (e.get("nom") or "").strip()
+        aliases = [a for a in (prenom, nom, f"{prenom} {nom}".strip()) if a]
+        add_person(aliases, e.get("photo"))
+
+    for a in profil.get("animaux") or []:
+        if not isinstance(a, dict):
+            continue
+        nom = (a.get("nom") or "").strip()
+        aliases = [x for x in (nom, "chien", "dog", "golden") if x]
+        add_person(aliases, a.get("photo"))
+
+    return entries
+
+
+_VISION_HINTS = (
+    "visage",
+    "photo",
+    "photos",
+    "apparence",
+    "physique",
+    "physiquement",
+    "decris",
+    "décris",
+    "decrire",
+    "décrire",
+    "description",
+    "ressemble",
+    "look",
+    "voir",
+    "vois",
+    "montre",
+    "image",
+    "portrait",
+    "cheveux",
+    "barbe",
+    "yeux",
+)
+
+
+def _resolve_vision_images(message: str, *, max_images: int = 5) -> list[Path]:
+    """Choisit les photos à attacher au prompt (vision multimodale, max 5)."""
+    catalog = _person_photo_catalog()
+    if not catalog:
+        return []
+
+    msg_norm = _normalize_for_match(message)
+    wants_vision = any(h in msg_norm for h in _VISION_HINTS)
+    wants_all = any(
+        k in msg_norm
+        for k in (
+            "entourage",
+            "famille",
+            "animaux",
+            "tout le monde",
+            "tous",
+            "toutes",
+            "chacun",
+            "chaque personne",
+        )
+    )
+
+    matched: list[Path] = []
+    seen: set[Path] = set()
+    for aliases, path in catalog:
+        for alias in aliases:
+            alias_n = _normalize_for_match(alias)
+            if len(alias_n) < 3:
+                continue
+            if alias_n in msg_norm:
+                if path not in seen:
+                    matched.append(path)
+                    seen.add(path)
+                break
+
+    if matched:
+        return matched[:max_images]
+
+    # Demande générique d'apparence sans prénom → toutes les photos (limité)
+    if wants_vision and wants_all:
+        return [p for _, p in catalog][:max_images]
+
+    if wants_vision:
+        # « décris les photos » sans nom → on joint tout ce qu'on a (cap)
+        return [p for _, p in catalog][:max_images]
+
+    return []
+
+
+async def _chat_ai(prompt: str, image_paths: list[Path] | None = None) -> str:
     try:
         from cursor_sdk import Agent, AgentOptions, LocalAgentOptions  # type: ignore
     except ImportError as exc:
@@ -1438,9 +1627,55 @@ async def _chat_ai(prompt: str) -> str:
     if not api_key:
         raise ValueError("CURSOR_API_KEY non défini dans .env")
 
+    message: object = prompt
+    paths = [p for p in (image_paths or []) if p.is_file()]
+
+    if paths:
+        try:
+            from cursor_sdk import SDKImage, UserMessage  # type: ignore
+
+            images: list = []
+            for path in paths:
+                try:
+                    images.append(SDKImage.from_file(str(path)))
+                except Exception:
+                    import base64
+
+                    raw = path.read_bytes()
+                    # Limite taille payload (~800 Ko base64 max raisonnable)
+                    if len(raw) > 900_000:
+                        continue
+                    suffix = path.suffix.lower()
+                    mime = {
+                        ".jpg": "image/jpeg",
+                        ".jpeg": "image/jpeg",
+                        ".png": "image/png",
+                        ".webp": "image/webp",
+                        ".gif": "image/gif",
+                    }.get(suffix, "image/jpeg")
+                    images.append(
+                        {
+                            "data": base64.b64encode(raw).decode("ascii"),
+                            "mime_type": mime,
+                        }
+                    )
+            if images:
+                labels = ", ".join(p.name for p in paths)
+                message = UserMessage(
+                    text=(
+                        f"{prompt}\n\n"
+                        f"[VISION] {len(images)} image(s) jointe(s) : {labels}. "
+                        "Tu VOIS ces photos — décris-les à partir de ce que tu observes."
+                    ),
+                    images=images,
+                )
+        except ImportError:
+            # Ancienne version du SDK sans vision → texte seul
+            message = prompt
+
     result = await asyncio.to_thread(
         Agent.prompt,
-        prompt,
+        message,
         AgentOptions(
             api_key=api_key,
             model="gemini-3.7-flash",
@@ -1708,9 +1943,15 @@ async def chat_with_asclepios(body: ChatRequest):
 
             context = await asyncio.to_thread(build_medical_context, DATA_DIR)
             yield f"data: Contexte prêt ({len(context)} caractères)\n\n".encode()
+
+            vision_images = _resolve_vision_images(body.message)
+            if vision_images:
+                names = ", ".join(p.name for p in vision_images)
+                yield f"data: Vision : {len(vision_images)} photo(s) ouverte(s) — {names}\n\n".encode()
+
             yield "data: Appel au modèle IA…\n\n".encode()
             prompt = _build_chat_prompt(body.message, history, context)
-            raw_answer = await _chat_ai(prompt)
+            raw_answer = await _chat_ai(prompt, vision_images)
         except Exception as exc:
             yield f"data: Erreur : {exc}\n\n".encode()
             yield b"data: [ERROR]\n\n"
