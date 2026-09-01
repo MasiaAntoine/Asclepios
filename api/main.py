@@ -28,8 +28,10 @@ from pydantic import BaseModel
 # - Docker : `uvicorn api.main:app` (PYTHONPATH=/workspace) → package `api.*`
 # - Local dev.sh : `uvicorn main:app` depuis api/ → module direct
 try:
+    from api import agenda
     from api.conversation_behavior import ConversationBehaviorProfile
 except ModuleNotFoundError:
+    import agenda
     from conversation_behavior import ConversationBehaviorProfile
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
@@ -1054,6 +1056,29 @@ def settings_status() -> dict:
     }
 
 
+# ── Agenda médical (lecture seule d'un flux iCal) ────────────────────────────
+
+
+@app.get("/api/agenda/status")
+def agenda_status() -> dict:
+    """Indique si le flux iCal est configuré (sans exposer l'URL secrète)."""
+    return agenda.status(DATA_DIR)
+
+
+@app.get("/api/agenda/events")
+def agenda_events(
+    start: str | None = Query(default=None, description="Borne basse ISO (incluse)"),
+    end: str | None = Query(default=None, description="Borne haute ISO (incluse)"),
+    refresh: bool = Query(default=False, description="Ignore le cache et refetch"),
+) -> dict:
+    """Rendez-vous du Google Agenda « Médical ». Lecture seule."""
+    try:
+        return agenda.get_events(DATA_DIR, start=start, end=end, force=refresh)
+    except agenda.AgendaError as exc:
+        status_code = 503 if agenda.is_configured() else 501
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
 @app.post("/api/sync/push")
 async def sync_push():
     async def stream() -> AsyncGenerator[bytes, None]:
@@ -1279,7 +1304,7 @@ _CHATS_DIR = DATA_DIR / "chats"
 # `conversation_behavior.ConversationBehaviorProfile` (voir data/assistant-personality.md).
 
 _MEDICAL_SYSTEM = """Tu es Asclepios, l'assistant IA du dossier médical personnel de l'utilisateur.
-Tu as accès au contexte fourni (profil, poids, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations)
+Tu as accès au contexte fourni (profil, poids, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
 ET à l'historique COMPLET de cette conversation.
 Tu travailles avec le répertoire data/ comme répertoire de travail : tu PEUX ouvrir les fichiers images (jpg/png) listés dans le contexte.
 
@@ -1291,6 +1316,12 @@ CADRE MÉDICAL :
 - Tu n'es PAS un médecin : pas de diagnostic définitif ni d'ordonnance. Tu aides à comprendre, préparer une consultation, croiser les données.
 - Sois discret et respectueux (données très sensibles).
 - Pour une synthèse, cite les dates et valeurs concrètes du contexte.
+
+AGENDA MÉDICAL :
+- La section « Agenda médical (rendez-vous) » du contexte vient du Google Agenda de l'utilisateur (lecture seule).
+- Tu peux donc répondre sur ses prochains rendez-vous, préparer une consultation à venir, ou relier un RDV à un traitement / une analyse.
+- Tu ne peux PAS créer, modifier ou supprimer un rendez-vous : si on te le demande, dis-le et renvoie vers Google Agenda.
+- Si la section est absente, c'est que l'agenda n'est pas configuré ou pas encore synchronisé : ne suppose aucun rendez-vous.
 
 PHOTOS / APPARENCE :
 - Les photos de famille, entourage et animaux sont dans data/personnes/.

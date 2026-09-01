@@ -112,6 +112,29 @@ function renderMd(text: string): string {
     .replace(/<\/table>/g, "</table></div>");
 }
 
+/** Horodatage ISO du serveur (UTC) → heure locale « 21:07 ». */
+function messageTime(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Date complète pour l'infobulle (le jour n'est pas visible dans la bulle). */
+function messageDateTitle(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 async function scrollToBottom() {
   await nextTick();
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight;
@@ -332,10 +355,13 @@ async function send() {
     id: `u-${Date.now()}`,
     role: "user",
     content: text,
+    created_at: new Date().toISOString(),
   };
   messages.value.push(userMsg);
 
   const assistantId = `a-${Date.now()}`;
+  // `created_at` est posé à la fin du stream, comme côté serveur : l'heure
+  // affichée reste donc la même après un rechargement de la conversation.
   messages.value.push({
     id: assistantId,
     role: "assistant",
@@ -442,6 +468,7 @@ async function send() {
         ? `Désolé — ${error.value}`
         : "Aucune réponse reçue. Vérifie CURSOR_API_KEY et relance l’API.";
     }
+    if (msg) msg.created_at = new Date().toISOString();
 
     await loadConversations();
   } catch (e) {
@@ -449,6 +476,7 @@ async function send() {
       error.value = e instanceof Error ? e.message : "Erreur inconnue";
       const msg = messages.value.find((m) => m.id === assistantId);
       if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
+      if (msg) msg.created_at = new Date().toISOString();
     }
   } finally {
     running.value = false;
@@ -713,6 +741,16 @@ onMounted(() => {
                   {{ statusLine || "Réflexion…" }}
                 </p>
               </div>
+
+              <!-- Horodatage -->
+              <span
+                v-if="messageTime(m.created_at)"
+                class="-mt-1 px-1 text-[11px] tabular-nums text-[var(--muted-foreground)]"
+                :class="m.role === 'user' ? 'self-end' : 'self-start'"
+                :title="messageDateTitle(m.created_at)"
+              >
+                {{ messageTime(m.created_at) }}
+              </span>
             </div>
           </div>
         </div>

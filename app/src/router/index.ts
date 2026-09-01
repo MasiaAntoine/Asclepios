@@ -82,6 +82,11 @@ const router = createRouter({
       component: () => import('@/views/DoctorsView.vue'),
     },
     {
+      path: '/agenda',
+      name: 'agenda',
+      component: () => import('@/views/AgendaView.vue'),
+    },
+    {
       path: '/assistant',
       name: 'chat',
       component: () => import('@/views/ChatView.vue'),

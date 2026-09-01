@@ -22,7 +22,15 @@ STATE_FILE = ROOT / ".sync_state.json"
 MARKER = b"MEDENC2\n"
 # Marqueurs d'ancienne génération — ignorés / nettoyés, plus synchronisés.
 LEGACY_DIR_MARKER = ".ovhdir"
-SKIP_NAMES = {".DS_Store", ".vault_structure.json", "__pycache__", LEGACY_DIR_MARKER}
+# `agenda-cache.json` est un snapshot du flux iCal, régénéré à chaque fetch :
+# le synchroniser ne ferait que créer du churn sur OVH.
+SKIP_NAMES = {
+    ".DS_Store",
+    ".vault_structure.json",
+    "__pycache__",
+    "agenda-cache.json",
+    LEGACY_DIR_MARKER,
+}
 META_SHA = "sha256"
 
 # Dossiers attendus même vides (créés localement, pas stockés sur OVH).

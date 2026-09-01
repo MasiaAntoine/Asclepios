@@ -4,6 +4,7 @@ import logoIconUrl from '@/assets/logo-icon.png'
 import {
   Activity,
   BookOpen,
+  CalendarDays,
   Droplets,
   FileText,
   LayoutDashboard,
@@ -70,6 +71,7 @@ const navSections: NavSection[] = [
   {
     label: 'Suivi',
     items: [
+      { label: 'Agenda', icon: CalendarDays, to: '/agenda', name: 'agenda' },
       { label: 'Poids', icon: Scale, to: '/poids', name: 'weight' },
       { label: 'Suivi', icon: Activity, to: '/suivi', name: 'suivi' },
     ],

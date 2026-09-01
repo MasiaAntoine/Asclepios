@@ -10,3 +10,5 @@ Pillow
 pdfplumber
 cursor-sdk
 httpx
+icalendar
+recurring-ical-events

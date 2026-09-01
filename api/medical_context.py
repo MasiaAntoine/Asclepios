@@ -112,6 +112,19 @@ def build_medical_context(data_dir: Path) -> str:
     if doctors:
         add("Médecins", json.dumps(doctors, ensure_ascii=False, indent=2))
 
+    # Agenda médical (snapshot du flux iCal — pas d'appel réseau ici)
+    try:
+        try:
+            from api.agenda import format_for_ai
+        except ModuleNotFoundError:
+            from agenda import format_for_ai
+
+        agenda_text = format_for_ai(data_dir)
+        if agenda_text.strip():
+            add("Agenda médical (rendez-vous)", _truncate(agenda_text, 8_000))
+    except Exception:
+        pass  # l'agenda est facultatif : ne jamais casser le contexte
+
     # Dossiers relations passées (contexte affectif / patterns)
     rel_dir = data_dir / "relations"
     if rel_dir.is_dir():
