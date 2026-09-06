@@ -22,28 +22,37 @@ STATE_FILE = ROOT / ".sync_state.json"
 MARKER = b"MEDENC2\n"
 # Marqueurs d'ancienne génération — ignorés / nettoyés, plus synchronisés.
 LEGACY_DIR_MARKER = ".ovhdir"
-# `agenda-cache.json` est un snapshot du flux iCal, régénéré à chaque fetch :
-# le synchroniser ne ferait que créer du churn sur OVH.
+# `cache/` et `.cache/` sont locaux (agenda iCal, parse PDF) : pas de sync.
 SKIP_NAMES = {
     ".DS_Store",
     ".vault_structure.json",
     "__pycache__",
-    "agenda-cache.json",
+    ".cache",
+    "cache",
     LEGACY_DIR_MARKER,
 }
 META_SHA = "sha256"
 
 # Dossiers attendus même vides (créés localement, pas stockés sur OVH).
 CANONICAL_DIRS = (
-    "prise-de-sang",
-    "ordonnances",
+    "identite",
+    "mutuelle",
+    "assistant",
+    "suivi",
+    "humains",
+    "humains/personnes",
+    "humains/relations",
+    "humains/medecins",
+    "humains/photos",
     "medicaments",
+    "ordonnances",
     "rapports",
-    "traumas",
-    "relations",
-    "personnes",
-    "chats",
+    "recits",
+    "prise-de-sang",
+    "assistant/chats",
     "scripts",
+    "fonts",
+    "cache",
 )
 
 
@@ -61,7 +70,7 @@ def load_config() -> dict:
     if missing:
         sys.exit(f"Variables manquantes dans .env : {', '.join(missing)}")
 
-    data_dir = ROOT / os.getenv("LOCAL_DATA_DIR", "data")
+    data_dir = ROOT / os.getenv("LOCAL_DATA_DIR", "vault")
     return {
         "access_key": os.environ["OVH_ACCESS_KEY"],
         "secret_key": os.environ["OVH_SECRET_KEY"],
@@ -396,7 +405,7 @@ def cmd_pull(cfg: dict, *, full: bool = False) -> None:
                 child.unlink()
             elif child.is_dir():
                 shutil.rmtree(child)
-        print("Mode --full : data/ local vidé.")
+        print("Mode --full : vault/ local vidé.")
         local = {}
     else:
         local = scan_local(data_dir)
@@ -499,7 +508,7 @@ def cmd_pull(cfg: dict, *, full: bool = False) -> None:
 
 def auto_push_after_pdf(*, full: bool = False) -> bool:
     """
-    Push incrémental de data/ vers OVH.
+    Push incrémental de vault/ vers OVH.
     À appeler après toute génération de PDF.
     Retourne True si le push a réussi.
     """

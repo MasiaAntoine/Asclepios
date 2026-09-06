@@ -45,7 +45,7 @@ async function updateStatus(status: "applied" | "rejected") {
   }
 
   try {
-    await fetch(`${API_BASE}/data/update-edit-status`, {
+    await fetch(`${API_BASE}/vault/update-edit-status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -66,7 +66,7 @@ async function applyEdit() {
   error.value = null;
 
   try {
-    const res = await fetch(`${API_BASE}/data/apply-edit`, {
+    const res = await fetch(`${API_BASE}/vault/apply-edit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -135,7 +135,7 @@ async function reject() {
             {{ proposal.description }}
           </p>
           <p class="mt-1 text-xs font-mono text-[var(--muted-foreground)]">
-            📁 data/{{ proposal.path }}
+            📁 vault/{{ proposal.path }}
           </p>
         </div>
       </div>

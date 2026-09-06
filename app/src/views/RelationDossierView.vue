@@ -8,6 +8,7 @@ import {
   type RelationSuite,
 } from '@/composables/useProfile'
 import { fetchText } from '@/lib/dataClient'
+import { relationFile } from '@/lib/vault'
 import PageShell from '@/components/PageShell.vue'
 import { ArrowLeft, Calendar, FileText, Heart, User } from '@lucide/vue'
 
@@ -145,7 +146,7 @@ watch(
         profil.value?.relations_passees?.find(
           (r) => r.dossier && r.dossier.replace(/\.md$/i, '') === slug.value,
         )?.dossier ?? `${slug.value}.md`
-      markdown.value = await fetchText(`relations/${file}`)
+      markdown.value = await fetchText(relationFile(file))
     } catch (e) {
       mdError.value = e instanceof Error ? e.message : 'Dossier introuvable'
     } finally {

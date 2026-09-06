@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { dataUrl, fetchJson, fetchText } from '@/lib/dataClient'
+import { VAULT, rapportFile } from '@/lib/vault'
 
 export interface ReportMeta {
   id: string
@@ -80,11 +81,11 @@ async function loadIndex() {
   loading.value = true
   error.value = null
   try {
-    const index = await fetchJson<IndexEntry[]>('rapports/index.json')
+    const index = await fetchJson<IndexEntry[]>(VAULT.rapportsIndex)
     const metas: ReportMeta[] = []
     await Promise.all(
       index.map(async (entry) => {
-        const content = await fetchText(`rapports/${entry.file}`)
+        const content = await fetchText(rapportFile(entry.file))
         contentCache.set(entry.id, content)
         metas.push(parseMeta(entry.id, entry.file, content))
       }),
@@ -111,7 +112,7 @@ export function useReports() {
     if (!meta) return undefined
     let content = contentCache.get(normalized)
     if (!content) {
-      content = await fetchText(`rapports/${meta.file}`)
+      content = await fetchText(rapportFile(meta.file))
       contentCache.set(normalized, content)
     }
     return { ...meta, content }
@@ -141,5 +142,5 @@ export function useReports() {
 }
 
 export function reportPath(id: string): string {
-  return dataUrl(`rapports/${id.replace(/\.md$/i, '')}.md`)
+  return dataUrl(rapportFile(`${id.replace(/\.md$/i, '')}.md`))
 }

@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { fetchJson, fetchText } from '@/lib/dataClient'
 import { parseFrDate } from '@/lib/chartTheme'
+import { VAULT } from '@/lib/vault'
 
 export interface PoidsEntry {
   date: string
@@ -47,8 +48,8 @@ async function load() {
   error.value = null
   try {
     const [profil, poidsRaw] = await Promise.all([
-      fetchJson<{ taille_cm: number }>('profil.json'),
-      fetchText('poids.csv'),
+      fetchJson<{ taille_cm: number }>(VAULT.profil),
+      fetchText(VAULT.poids),
     ])
     tailleCm.value = profil.taille_cm
     entries.value = parsePoidsCsv(poidsRaw, profil.taille_cm)

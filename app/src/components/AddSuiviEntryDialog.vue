@@ -90,7 +90,7 @@ async function submit() {
   if (props.type === 'labs') {
     endpoint = `${API_BASE}/labs/add`
     body = {
-      csv: props.csv ?? 'labs.csv',
+      csv: props.csv ?? 'suivi/labs.csv',
       date: isoToFr(labDate.value),
       analyte: labAnalyte.value.toUpperCase(),
       value: parseFloat(labValue.value),

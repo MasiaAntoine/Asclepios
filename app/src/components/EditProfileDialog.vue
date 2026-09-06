@@ -17,10 +17,10 @@ const nom = ref('')
 const dateNaissance = ref('')
 const sexe = ref('homme')
 const tailleCm = ref('')
-const tabacType = ref('')
-const tabacDebut = ref('')
-const tabacNicotine = ref('')
-const tabacNote = ref('')
+const habitudeType = ref('')
+const habitudeDebut = ref('')
+const habitudeDose = ref('')
+const habitudeNote = ref('')
 
 const canSubmit = computed(
   () =>
@@ -45,11 +45,11 @@ function fillFromProfil() {
   dateNaissance.value = props.profil.date_naissance
   sexe.value = props.profil.sexe
   tailleCm.value = String(props.profil.taille_cm)
-  tabacType.value = props.profil.tabac?.type ?? ''
-  tabacDebut.value = props.profil.tabac?.debut ?? ''
-  tabacNicotine.value =
-    props.profil.tabac?.nicotine_mg_ml != null ? String(props.profil.tabac.nicotine_mg_ml) : ''
-  tabacNote.value = props.profil.tabac?.note ?? ''
+  habitudeType.value = props.profil.habitude?.type ?? ''
+  habitudeDebut.value = props.profil.habitude?.debut ?? ''
+  habitudeDose.value =
+    props.profil.habitude?.dose != null ? String(props.profil.habitude.dose) : ''
+  habitudeNote.value = props.profil.habitude?.note ?? ''
 }
 
 function openDialog() {
@@ -77,10 +77,10 @@ async function submit() {
       date_naissance: dateNaissance.value.trim(),
       sexe: sexe.value,
       taille_cm: parseFloat(tailleCm.value),
-      tabac_type: tabacType.value.trim(),
-      tabac_debut: tabacDebut.value.trim(),
-      tabac_nicotine_mg_ml: tabacNicotine.value ? parseFloat(tabacNicotine.value) : null,
-      tabac_note: tabacNote.value.trim(),
+      habitude_type: habitudeType.value.trim(),
+      habitude_debut: habitudeDebut.value.trim(),
+      habitude_dose: habitudeDose.value ? parseFloat(habitudeDose.value) : null,
+      habitude_note: habitudeNote.value.trim(),
     }),
   })
 }
@@ -113,7 +113,7 @@ const inputClass =
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-6 py-4">
           <div>
             <h2 class="text-base font-semibold text-[var(--foreground)]">Modifier le profil</h2>
-            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">Identité, taille et tabac</p>
+            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">Identité, taille et habitude</p>
           </div>
           <button
             type="button"
@@ -157,25 +157,25 @@ const inputClass =
           </div>
 
           <div class="rounded-xl border border-[var(--border)] p-3 space-y-3">
-            <p class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Tabac</p>
+            <p class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Habitude</p>
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Type</label>
-                <input v-model="tabacType" type="text" :class="inputClass" />
+                <input v-model="habitudeType" type="text" :class="inputClass" />
               </div>
               <div>
                 <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Depuis</label>
-                <input v-model="tabacDebut" type="text" placeholder="09/04/2025" :class="inputClass" />
+                <input v-model="habitudeDebut" type="text" placeholder="09/04/2025" :class="inputClass" />
               </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Nicotine (mg/ml)</label>
-                <input v-model="tabacNicotine" type="number" step="0.1" :class="inputClass" />
+                <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Dose</label>
+                <input v-model="habitudeDose" type="number" step="0.1" :class="inputClass" />
               </div>
               <div>
                 <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Note</label>
-                <input v-model="tabacNote" type="text" :class="inputClass" />
+                <input v-model="habitudeNote" type="text" :class="inputClass" />
               </div>
             </div>
           </div>

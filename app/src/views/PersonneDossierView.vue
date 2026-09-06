@@ -9,6 +9,7 @@ import {
   type Personne,
 } from '@/composables/useProfile'
 import { dataUrl, fetchText } from '@/lib/dataClient'
+import { personneFile } from '@/lib/vault'
 import PageShell from '@/components/PageShell.vue'
 import {
   ArrowLeft,
@@ -130,7 +131,7 @@ watch(
       if (!profil.value) await load()
       const found = findEntry()
       const file = found?.dossier ?? `${slug.value}.md`
-      markdown.value = await fetchText(`personnes/${file}`)
+      markdown.value = await fetchText(personneFile(file))
     } catch (e) {
       mdError.value = e instanceof Error ? e.message : 'Dossier introuvable'
     } finally {

@@ -3,7 +3,7 @@
 ## Objectif
 
 Séparer proprement **comment** Asclepios parle de **ce qu'il sait**. La couche
-médicale (données, sécurité, outils, édition) reste dans `api/main.py`. La
+médicale (données, sécurité, outils, édition) reste dans `api/routers/`. La
 personnalité conversationnelle vit dans une couche dédiée, éditable sans
 toucher au code.
 
@@ -14,7 +14,7 @@ Deux couches indépendantes, concaténées au moment de construire le prompt :
 ```
 ┌─────────────────────────────────────────────────┐
 │ COUCHE 1 — Moteur médical                       │
-│ api/main.py :: _MEDICAL_SYSTEM                  │
+│ api/routers/ :: _MEDICAL_SYSTEM                  │
 │  • sécurité médicale                            │
 │  • outils (édition validée, vision)             │
 │  • règles données (contexte, historique)        │
@@ -27,7 +27,7 @@ Deux couches indépendantes, concaténées au moment de construire le prompt :
 │  • injection profil éditable                    │
 │  • hint de style ciblé                          │
 │                                                 │
-│ data/assistant-personality.md   ← éditable      │
+│ vault/assistant/personality.md   ← éditable      │
 │  • 17 sections de règles conversationnelles     │
 └─────────────────────────────────────────────────┘
                        ↓
@@ -37,7 +37,7 @@ Deux couches indépendantes, concaténées au moment de construire le prompt :
 ## Fichiers
 
 - `api/conversation_behavior.py` — logique Python (détection + assembly).
-- `data/assistant-personality.md` — règles éditables. Chargé à chaque tour, donc
+- `vault/assistant/personality.md` — règles éditables. Chargé à chaque tour, donc
   aucune reprise du serveur nécessaire après modification.
 
 ## Types d'échange détectés
@@ -54,17 +54,17 @@ Deux couches indépendantes, concaténées au moment de construire le prompt :
 
 Les heuristiques sont volontairement **légères** : elles orientent le style,
 elles ne remplacent pas le jugement du modèle. C'est le fichier
-`assistant-personality.md` qui porte la logique fine.
+`assistant/personality.md` qui porte la logique fine.
 
 ## Comment modifier la personnalité
 
 Deux options :
 
-1. **Édition directe** : ouvrir `data/assistant-personality.md` dans l'IDE et
+1. **Édition directe** : ouvrir `vault/assistant/personality.md` dans l'IDE et
    modifier ; les changements sont pris en compte au tour suivant.
 2. **Via Asclepios lui-même** : demander par exemple « tu es trop formel, adapte
    ta personnalité pour être plus détendue » ; l'agent proposera un diff que tu
-   valides ou refuses, comme n'importe quel autre dossier `data/` (voir
+   valides ou refuses, comme n'importe quel autre dossier `vault/` (voir
    [Édition assistée](edition-assistee.md)).
 
 ## Priorité en cas de conflit
@@ -91,4 +91,4 @@ appliquées, seul le hint de style change.
 - Ajouter un paramètre `medical_risk_level` provenant du reste de l'app (ex :
   résultats de biologie récents anormaux) pour ajuster le ton.
 - Externaliser aussi le `_MEDICAL_SYSTEM` en fichier éditable si tu veux tout
-  piloter depuis `data/`.
+  piloter depuis `vault/`.

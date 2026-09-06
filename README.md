@@ -1,18 +1,18 @@
 # Asclépios — sync chiffré OVH Object Storage
 
-Synchronisation d’un dossier local `data/` vers un bucket OVH Object Storage (S3), avec chiffrement côté client avant l’envoi.
+Synchronisation d’un dossier local `vault/` vers un bucket OVH Object Storage (S3), avec chiffrement côté client avant l’envoi.
 
 ## Principe
 
 | Commande   | Effet                                                          |
 | ---------- | -------------------------------------------------------------- |
-| `push`     | Sync incrémental data→OVH (ajout / modif / suppression)        |
-| `pull`     | Sync incrémental OVH→data (ajout / modif / suppression)        |
+| `push`     | Sync incrémental vault→OVH (ajout / modif / suppression)       |
+| `pull`     | Sync incrémental OVH→vault (ajout / modif / suppression)       |
 | `… --full` | Resync complète (wipe puis tout renvoyer / tout retélécharger) |
 
-Le dossier unique de travail est `data/` : c’est à la fois la source du push et la destination du pull.
+Le dossier unique de travail est `vault/` : c’est à la fois la source du push et la destination du pull. Les conventions de nommage sont dans `vault/README.md`.
 
-**Structure** : chaque fichier chiffré embarque son chemin relatif. Au `pull`, l’arborescence est déduite automatiquement de ces chemins (plus de marqueurs `.ovhdir`). Les dossiers métier vides attendus (`prise-de-sang`, `medicaments`, `rapports`, `traumas`, `scripts`) sont recréés localement.
+**Structure** : chaque fichier chiffré embarque son chemin relatif. Au `pull`, l’arborescence est déduite automatiquement de ces chemins (plus de marqueurs `.ovhdir`). Les dossiers métier vides attendus sont recréés localement.
 
 Les fichiers sont chiffrés **avant** l’upload (`ENCRYPTION_KEY` dans `.env`). OVH ne stocke que des blobs illisibles. Un chiffrement serveur (SSE-OMK) peut s’ajouter côté OVH, mais la clé perso reste obligatoire pour relire les données.
 
@@ -28,7 +28,7 @@ cd asclepios
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-# deps des scripts métier (après pull) : pip install -r data/scripts/requirements.txt
+# deps des scripts métier (après pull) : pip install -r vault/scripts/requirements.txt
 cp .env.example .env
 ```
 
@@ -38,6 +38,9 @@ Remplir `.env` :
 - `OVH_BUCKET` — nom du conteneur (ex. `asclepios`)
 - `OVH_REGION` / `OVH_ENDPOINT` — déjà préremplis pour Paris (`eu-west-par`)
 - `ENCRYPTION_KEY` — clé Fernet déjà présente dans ton `.env` ; **ne pas la changer** tant que des fichiers chiffrés existent sur OVH, sinon tu ne pourras plus les déchiffrer
+- `LOCAL_DATA_DIR=vault`
+
+Dev local : `docker compose up` (API + Vite). Plus de cible production nginx.
 
 ## Usage
 
@@ -49,7 +52,7 @@ source .venv/bin/activate
 
 ### Push — sauvegarder sur OVH
 
-1. Place tes fichiers dans `data/`
+1. Place tes fichiers dans `vault/`
 2. Lance :
 
 ```bash
@@ -58,7 +61,7 @@ python scripts/sync.py push
 
 Comportement (incrémental) :
 
-1. arborescence déduite des chemins de fichiers dans `data/`
+1. arborescence déduite des chemins de fichiers dans `vault/`
 2. hash de chaque fichier local comparé à l’état (`.sync_state.json`)
 3. upload seulement des fichiers **nouveaux ou modifiés**
 4. suppression sur OVH des fichiers **effacés en local** (et orphelins / anciens `.ovhdir`)
@@ -82,12 +85,12 @@ Resync totale : `python scripts/sync.py pull --full`
 
 ### Scripts métier
 
-Les scripts qui traitent le contenu de `data/` vivent **dans** `data/scripts/` (chiffrés et synchronisés comme le reste). Ils ne sont pas versionnés dans git.
+Les scripts qui traitent le contenu de `vault/` vivent **dans** `vault/scripts/` (chiffrés et synchronisés comme le reste). Ils ne sont pas versionnés dans git.
 
 Après un `pull` (ou en local) :
 
 ```bash
-python data/scripts/<script>.py
+python vault/scripts/<script>.py
 ```
 
 ## Structure
@@ -96,10 +99,12 @@ python data/scripts/<script>.py
 asclepios/
 ├── .env                 # secrets (non versionné)
 ├── .env.example
+├── api/                 # FastAPI (routers)
+├── app/                 # Vue 3 (dev local)
 ├── scripts/
 │   └── sync.py          # seul script public : push / pull chiffré
 ├── requirements.txt
-├── data/                # travail local + scripts métier (non versionné, sync OVH)
+├── vault/               # travail local + scripts métier (non versionné, sync OVH)
 └── README.md
 ```
 
@@ -108,5 +113,5 @@ asclepios/
 - Ne commit jamais `.env`
 - Sauvegarde `ENCRYPTION_KEY` hors du projet (gestionnaire de mots de passe)
 - Sans cette clé, les données sur OVH sont irrécupérables
-- Le contenu de `data/` (y compris les scripts métier) n’est pas dans git : le dépôt public ne révèle pas la nature des données
-- `push` et `pull` sont destructifs sur leur cible respective (remote ou `data/`) : une seule « vérité » à la fois
+- Le contenu de `vault/` (y compris les scripts métier) n’est pas dans git : le dépôt public ne révèle pas la nature des données
+- `push` et `pull` sont destructifs sur leur cible respective (remote ou `vault/`) : une seule « vérité » à la fois

@@ -61,7 +61,7 @@ Google Agenda (privé)
         ▼
 api/agenda.py ─── fetch httpx + parse icalendar
         │            ├── cache mémoire (TTL 10 min)
-        │            └── snapshot data/agenda-cache.json
+        │            └── snapshot vault/cache/agenda.json
         ├──────────► GET /api/agenda/events ──► useAgenda.ts ──► AgendaView.vue
         └──────────► format_for_ai() ─────────► medical_context.py ──► assistant
 ```
@@ -77,7 +77,7 @@ api/agenda.py ─── fetch httpx + parse icalendar
 Points d'implémentation :
 
 - **Cache mémoire, TTL 10 min** — le flux Google n'est pas temps réel, inutile de le marteler.
-- **Snapshot disque** (`data/agenda-cache.json`) — sert au contexte IA (jamais d'appel réseau bloquant pendant la construction du prompt) et de repli si Google est injoignable. Exclu du sync OVH (`SKIP_NAMES` dans `scripts/sync.py`) car il change à chaque fetch.
+- **Snapshot disque** (`vault/cache/agenda.json`) — sert au contexte IA (jamais d'appel réseau bloquant pendant la construction du prompt) et de repli si Google est injoignable. Exclu du sync OVH (`SKIP_NAMES` dans `scripts/sync.py`) car il change à chaque fetch.
 - **Récurrences expansées** via `recurring-ical-events` : une séance hebdomadaire apparaît à chaque occurrence.
 - **Parser de secours intégré** : si `icalendar` n'est pas installé, un parser iCal minimal prend le relais (VEVENT simples, sans expansion des récurrences) plutôt que de planter.
 - **`DTEND` des journées entières** est exclusif en iCal ; il est rendu inclusif pour ne pas afficher un jour de trop.

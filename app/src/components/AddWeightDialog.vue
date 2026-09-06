@@ -85,7 +85,7 @@ function scrollBottom() {
         <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <div>
             <h2 class="text-base font-semibold text-[var(--foreground)]">Nouvelle mesure de poids</h2>
-            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">Enregistré dans poids.csv puis sync OVH</p>
+            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">Enregistré dans vault/suivi/poids.csv puis sync OVH</p>
           </div>
           <button
             type="button"

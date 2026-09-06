@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { fetchJson, fetchText } from '@/lib/dataClient'
+import { VAULT } from '@/lib/vault'
 import type { HistoriqueDose, Traitement } from '@/composables/useProfile'
 
 export interface MedicationCard extends Traitement {
@@ -33,7 +34,7 @@ async function load() {
   error.value = null
   try {
     const data = await fetchJson<{ traitements: Traitement[]; mis_a_jour?: string }>(
-      'traitements.json',
+      VAULT.traitements,
     )
     misAJour.value = data.mis_a_jour ?? ''
     list.value = data.traitements.map((t) => ({

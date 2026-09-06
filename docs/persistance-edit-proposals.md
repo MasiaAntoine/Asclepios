@@ -12,7 +12,7 @@ Quand l'IA génère une proposition d'édition :
 
 ```json
 {
-  "path": "relations/noemie-lacour.md",
+  "path": "humains/relations/noemie-lacour.md",
   "description": "Ajout d'un texte de test",
   "old_string": "texte existant...",
   "new_string": "texte modifié...",
@@ -39,7 +39,7 @@ La proposition est sauvegardée dans le message assistant :
   "created_at": "2026-08-30T18:07:23Z",
   "edit_proposals": [
     {
-      "path": "relations/noemie-lacour.md",
+      "path": "humains/relations/noemie-lacour.md",
       "description": "...",
       "old_string": "...",
       "new_string": "...",
@@ -49,19 +49,19 @@ La proposition est sauvegardée dans le message assistant :
 }
 ```
 
-**Fichier** : `data/chats/{conversation-id}.json`
+**Fichier** : `vault/assistant/chats/{conversation-id}.json`
 
 ### 3. Actions utilisateur
 
 **Appliquer la modification :**
 1. Clic sur "Appliquer"
-2. API : `POST /api/data/apply-edit` → modifie le fichier + push OVH
-3. API : `POST /api/data/update-edit-status` → met à jour `status: "applied"` dans le chat
+2. API : `POST /api/vault/apply-edit` → modifie le fichier + push OVH
+3. API : `POST /api/vault/update-edit-status` → met à jour `status: "applied"` dans le chat
 4. UI : affiche ✓ "Modification appliquée et synchronisée"
 
 **Refuser la modification :**
 1. Clic sur "Refuser"
-2. API : `POST /api/data/update-edit-status` → met à jour `status: "rejected"` dans le chat
+2. API : `POST /api/vault/update-edit-status` → met à jour `status: "rejected"` dans le chat
 3. UI : affiche ✗ "Modification refusée"
 
 ### 4. Chargement d'une conversation existante
@@ -88,7 +88,7 @@ Quand tu ouvres une conversation :
 │ 3. Backend extrait la proposition                           │
 │    - Ajoute status: "pending"                               │
 │    - Ajoute created_at                                      │
-│    - Sauvegarde dans data/chats/{id}.json                   │
+│    - Sauvegarde dans vault/assistant/chats/{id}.json                   │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -119,14 +119,14 @@ Quand tu ouvres une conversation :
 
 ## API
 
-### POST `/api/data/apply-edit`
+### POST `/api/vault/apply-edit`
 
 Applique la modification au fichier et synchronise avec OVH.
 
 **Request :**
 ```json
 {
-  "path": "relations/noemie-lacour.md",
+  "path": "humains/relations/noemie-lacour.md",
   "old_string": "texte exact existant",
   "new_string": "texte modifié"
 }
@@ -134,13 +134,13 @@ Applique la modification au fichier et synchronise avec OVH.
 
 **Response :** SSE stream
 ```
-data: ✓ Fichier modifié : relations/noemie-lacour.md
+data: ✓ Fichier modifié : humains/relations/noemie-lacour.md
 data: ▶  Sync
 data: Push OVH (nouveaux / modifiés uniquement)…
 data: [DONE]
 ```
 
-### POST `/api/data/update-edit-status`
+### POST `/api/vault/update-edit-status`
 
 Met à jour le statut d'une proposition dans l'historique.
 
@@ -226,8 +226,8 @@ Tu : [clique Appliquer]
 
 ## Sécurité
 
-- Les propositions sont stockées dans `data/chats/` (chiffré lors du push OVH)
-- Seul l'endpoint `/api/data/update-edit-status` peut modifier le statut
+- Les propositions sont stockées dans `vault/assistant/chats/` (chiffré lors du push OVH)
+- Seul l'endpoint `/api/vault/update-edit-status` peut modifier le statut
 - Pas de modification directe du contenu de la proposition après création
 - Validation côté serveur : statut doit être `pending`, `applied` ou `rejected`
 
@@ -236,7 +236,7 @@ Tu : [clique Appliquer]
 ### Voir les propositions sauvegardées
 
 ```bash
-cd data/chats
+cd vault/assistant/chats
 cat {conversation-id}.json | jq '.messages[] | select(.edit_proposals != null) | .edit_proposals'
 ```
 

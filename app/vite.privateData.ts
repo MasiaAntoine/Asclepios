@@ -4,11 +4,11 @@ import type { Plugin } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /**
- * Serves the private data directory at /data during Vite dev.
+ * Serves the private vault at /vault during Vite dev.
  * Clinical files stay outside the app bundle and outside the GitHub app repo.
  */
-export function servePrivateData(dataDir: string): Plugin {
-  const root = path.resolve(dataDir)
+export function servePrivateData(vaultDir: string): Plugin {
+  const root = path.resolve(vaultDir)
 
   function sendFile(filePath: string, res: ServerResponse) {
     if (!filePath.startsWith(root) || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
@@ -49,10 +49,10 @@ export function servePrivateData(dataDir: string): Plugin {
     name: 'serve-private-data',
     configureServer(server) {
       server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        if (!req.url?.startsWith('/data')) return next()
+        if (!req.url?.startsWith('/vault')) return next()
 
         const url = new URL(req.url, 'http://localhost')
-        const rel = decodeURIComponent(url.pathname.replace(/^\/data\/?/, ''))
+        const rel = decodeURIComponent(url.pathname.replace(/^\/vault\/?/, ''))
 
         if (rel === 'rapports/index.json') {
           res.statusCode = 200

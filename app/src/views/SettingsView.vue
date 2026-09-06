@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useSseStream } from '@/composables/usePdfApi'
 import PageShell from '@/components/PageShell.vue'
 import {
   Cloud,
   CloudDownload,
   CloudUpload,
+  HardDrive,
   KeyRound,
   Loader,
   Server,
@@ -19,6 +20,14 @@ interface SettingsStatus {
   sync_state_date: string | null
   ai_model: string
   app_version: string
+  vault_files: number
+  vault_bytes: number
+  ovh_bytes_estimated: number
+  storage_class: string
+  storage_region: string
+  storage_eur_ht_per_gib_month: number
+  storage_eur_ht_per_month: number
+  storage_eur_ttc_per_month: number
 }
 
 const status = ref<SettingsStatus | null>(null)
@@ -62,6 +71,42 @@ async function runAction(endpoint: string, label: string) {
 function scrollBottom() {
   if (terminalEl.value) terminalEl.value.scrollTop = terminalEl.value.scrollHeight
 }
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`
+  const units = ['Ko', 'Mo', 'Go', 'To']
+  let value = bytes / 1024
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024
+    i += 1
+  }
+  const digits = value >= 10 ? 0 : 1
+  return `${value.toFixed(digits).replace('.', ',')} ${units[i]}`
+}
+
+function formatEur(amount: number, digits?: number): string {
+  const fraction = digits ?? (amount < 0.01 ? 4 : 2)
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: fraction,
+    maximumFractionDigits: fraction,
+  }).format(amount)
+}
+
+const vaultSizeLabel = computed(() =>
+  status.value ? formatSize(status.value.vault_bytes) : '',
+)
+const ovhSizeLabel = computed(() =>
+  status.value ? formatSize(status.value.ovh_bytes_estimated) : '',
+)
+const monthlyCostLabel = computed(() => {
+  if (!status.value) return ''
+  const ttc = status.value.storage_eur_ttc_per_month
+  if (ttc < 0.01) return 'moins de 0,01\u00a0€'
+  return formatEur(ttc)
+})
 
 onMounted(() => {
   void loadStatus()
@@ -107,6 +152,37 @@ onMounted(() => {
         </div>
         <p v-if="status" class="mt-3 text-xs text-[var(--muted-foreground)]">
           Asclepios {{ status.app_version }} · secrets uniquement dans <code class="rounded bg-[var(--muted)] px-1">.env</code>
+        </p>
+      </section>
+
+      <!-- Stockage -->
+      <section v-if="status" class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <div class="mb-4 flex items-center gap-2">
+          <HardDrive :size="16" class="text-[var(--primary)]" />
+          <h2 class="text-sm font-semibold text-[var(--foreground)]">Stockage du vault</h2>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div class="rounded-xl bg-[var(--muted)]/60 px-4 py-3">
+            <p class="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Données locales</p>
+            <p class="mt-1 text-lg font-semibold tabular-nums text-[var(--foreground)]">{{ vaultSizeLabel }}</p>
+            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+              {{ status.vault_files }} fichier{{ status.vault_files > 1 ? 's' : '' }}
+              · {{ ovhSizeLabel }} chiffrés sur OVH
+            </p>
+          </div>
+          <div class="rounded-xl bg-[var(--muted)]/60 px-4 py-3">
+            <p class="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Coût mensuel</p>
+            <p class="mt-1 text-lg font-semibold tabular-nums text-[var(--foreground)]">{{ monthlyCostLabel }}</p>
+            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+              {{ formatEur(status.storage_eur_ttc_per_month) }} TTC
+              · {{ formatEur(status.storage_eur_ht_per_month) }} HT
+            </p>
+          </div>
+        </div>
+        <p class="mt-3 text-xs text-[var(--muted-foreground)]">
+          Estimation {{ status.storage_class }} ({{ status.storage_region }})
+          à {{ formatEur(status.storage_eur_ht_per_gib_month, 4) }} HT / Gio / mois.
+          Pas de frais d’API, d’entrée ni de sortie.
         </p>
       </section>
 

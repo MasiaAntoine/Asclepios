@@ -39,7 +39,7 @@ _DEFAULT_FUTURE_DAYS = 365
 
 # Snapshot disque : permet à l'IA de lire l'agenda sans appel réseau bloquant,
 # et sert de repli si Google est injoignable.
-_SNAPSHOT_NAME = "agenda-cache.json"
+_SNAPSHOT_NAME = "cache/agenda.json"
 
 
 class AgendaError(RuntimeError):
@@ -327,8 +327,9 @@ def snapshot_path(data_dir: Path) -> Path:
 
 def write_snapshot(data_dir: Path, payload: dict[str, Any]) -> None:
     try:
-        data_dir.mkdir(parents=True, exist_ok=True)
-        snapshot_path(data_dir).write_text(
+        path = snapshot_path(data_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )

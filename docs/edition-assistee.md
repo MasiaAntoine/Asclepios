@@ -2,7 +2,7 @@
 
 ## Principe
 
-L'assistant Asclepios peut **proposer des modifications** aux fichiers dans `data/` (dossiers de relations, rapports, traumas) quand tu le lui demandes explicitement.
+L'assistant Asclepios peut **proposer des modifications** aux fichiers dans `vault/` (dossiers de relations, rapports, récits) quand tu le lui demandes explicitement.
 
 **Flow :**
 
@@ -15,10 +15,9 @@ L'assistant Asclepios peut **proposer des modifications** aux fichiers dans `dat
 ## Sécurité
 
 - **Validation obligatoire** : aucune modification sans ton accord
-- **Répertoires autorisés uniquement** : `relations/`, `personnes/`, `rapports/`, `traumas/`
-- **Fichiers racine autorisés** : `assistant-personality.md` (personnalité conversationnelle)
+- **Répertoires autorisés uniquement** : `humains/` (personnes, relations), `rapports/`, `recits/`, `assistant/`
 - **Fichiers autorisés uniquement** : `.md` et `.json`
-- **Protection path traversal** : impossible de sortir de `data/`
+- **Protection path traversal** : impossible de sortir de `vault/`
 - **Unicité garantie** : `old_string` doit être unique dans le fichier
 
 ## Format pour l'IA
@@ -27,7 +26,7 @@ L'assistant utilise ce format JSON dans sa réponse :
 
 ```json:edit
 {
-  "path": "relations/noemie-lacour.md",
+    "path": "humains/relations/noemie-lacour.md",
   "description": "Ajout détail sur la crise post-rupture",
   "old_string": "## Après / impact\n\n- **Énorme souffrance** après la rupture",
   "new_string": "## Après / impact\n\n- **Énorme souffrance** après la rupture\n- **Dépression d'environ 1 an**"
@@ -35,7 +34,7 @@ L'assistant utilise ce format JSON dans sa réponse :
 ```
 
 **Règles :**
-- `path` : relatif à `data/` (ex: `relations/nom.md` ou `personnes/prenom-nom.md`)
+- `path` : relatif à `vault/` (ex: `humains/relations/nom.md` ou `humains/personnes/prenom-nom.md`)
 - `description` : courte explication de la modification
 - `old_string` : texte exact existant (minimum ~50 chars pour unicité)
 - `new_string` : texte modifié
@@ -59,14 +58,14 @@ L'assistant utilise ce format JSON dans sa réponse :
 
 ## API
 
-### POST `/api/data/apply-edit`
+### POST `/api/vault/apply-edit`
 
 Applique une modification validée par l'utilisateur.
 
 **Request :**
 ```json
 {
-  "path": "relations/nom.md",
+  "path": "humains/relations/nom.md",
   "old_string": "texte exact",
   "new_string": "texte modifié"
 }
@@ -85,7 +84,7 @@ Applique une modification validée par l'utilisateur.
 - Elles restent visibles après un refresh de la page
 - Le statut (appliquée/refusée/en attente) est enregistré
 - Chaque action est horodatée
-- L'historique complet est dans `data/chats/{id}.json`
+- L'historique complet est dans `vault/assistant/chats/{id}.json`
 
 Voir [Persistance des propositions](persistance-edit-proposals.md) pour les détails.
 
@@ -108,7 +107,7 @@ Voir [Persistance des propositions](persistance-edit-proposals.md) pour les dét
 ## Technique
 
 **Backend :**
-- `api/main.py` : endpoint `/api/data/apply-edit`
+- `api/routers/` : endpoint `/api/vault/apply-edit`
 - Pattern parsing : `_extract_edit_proposals()` cherche les blocs `json:edit`
 - SSE marker : `EDIT_PROPOSAL:{json}` envoyé avant `[ANSWER_START]`
 

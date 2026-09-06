@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { useProfile, ageLabel } from '@/composables/useProfile'
 import type { RelationSuite } from '@/composables/useProfile'
 import {
-  Cigarette,
+  Activity,
   CreditCard,
   ExternalLink,
   FileText,
@@ -553,14 +553,14 @@ function eventClass(e: string) {
 
           <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
             <div class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)]">
-              <Cigarette :size="18" class="text-[var(--primary)]" />
+              <Activity :size="18" class="text-[var(--primary)]" />
             </div>
-            <p class="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Tabac</p>
-            <p class="mt-1 text-lg font-bold capitalize text-[var(--foreground)]">{{ profil.tabac.type }}</p>
+            <p class="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Habitude</p>
+            <p class="mt-1 text-lg font-bold capitalize text-[var(--foreground)]">{{ profil.habitude.type }}</p>
             <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
-              Depuis {{ profil.tabac.debut }}
-              <template v-if="profil.tabac.nicotine_mg_ml">
-                · {{ profil.tabac.nicotine_mg_ml }} mg/ml
+              Depuis {{ profil.habitude.debut }}
+              <template v-if="profil.habitude.dose">
+                · {{ profil.habitude.dose }}
               </template>
             </p>
           </div>

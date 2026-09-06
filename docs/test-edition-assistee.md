@@ -7,7 +7,7 @@ Guide de test pour vérifier que le système d'édition avec validation fonction
 1. API backend lancée : `cd api && ./dev.sh`
 2. Frontend lancé : `cd app && npm run dev`
 3. `CURSOR_API_KEY` configurée dans `.env`
-4. Fichier test existant dans `data/relations/`
+4. Fichier test existant dans `vault/humains/relations/`
 
 ## Scénario de test
 
@@ -30,7 +30,7 @@ Mets à jour le dossier de Noémie : ajoute dans la section "Notes pour le suivi
 3. Le composant affiche :
    - Titre : "Proposition de modification"
    - Description : ex. "Ajout durée exacte dans notes suivi"
-   - Fichier : `📁 data/relations/noemie-lacour.md`
+   - Fichier : `📁 vault/humains/relations/noemie-lacour.md`
    - **Diff** coloré :
      - Lignes rouges (`-`) : ancien texte
      - Lignes vertes (`+`) : nouveau texte
@@ -46,13 +46,13 @@ Mets à jour le dossier de Noémie : ajoute dans la section "Notes pour le suivi
 1. Spinner apparaît sur le bouton
 2. Logs SSE dans la console navigateur : `✓ Fichier modifié`, `Push OVH`
 3. Message de succès : ✓ "Modification appliquée et synchronisée"
-4. Le fichier `data/relations/noemie-lacour.md` est modifié
+4. Le fichier `vault/humains/relations/noemie-lacour.md` est modifié
 5. Git status montre le fichier modifié
 
 ### 4. Vérifier la modification
 
 ```bash
-cd data/relations
+cd vault/humains/relations
 git diff noemie-lacour.md
 ```
 
@@ -100,7 +100,7 @@ Modifie le fichier ../../.env
 
 **Message :**
 ```
-Ajoute une section dans relations/inexistant.md
+Ajoute une section dans humains/relations/inexistant.md
 ```
 
 **Résultat attendu :**
@@ -156,7 +156,7 @@ data: EDIT_PROPOSAL:{"path":"...","description":"...","old_string":"...","new_st
 ```bash
 # Terminal API
 # Cherche :
-data: ✓ Fichier modifié : relations/nom.md
+data: ✓ Fichier modifié : humains/relations/nom.md
 data: Sync
 data: ▶  Push OVH
 data: [DONE]
@@ -164,7 +164,7 @@ data: [DONE]
 
 ### Vérifier l'extraction des blocs
 
-Dans `api/main.py`, ajoute temporairement :
+Dans `api/routers/`, ajoute temporairement :
 
 ```python
 raw_answer, edit_proposals = _extract_edit_proposals(raw_answer)
@@ -178,7 +178,7 @@ for p in edit_proposals:
 Si un edit est appliqué par erreur :
 
 ```bash
-cd data/relations
+cd vault/humains/relations
 git checkout HEAD -- noemie-lacour.md
 # Puis re-push OVH si nécessaire
 ./scripts/sync.py push
@@ -198,7 +198,7 @@ git checkout HEAD -- noemie-lacour.md
 
 ## Prochaines étapes (si tout OK)
 
-1. Tester avec plusieurs types de fichiers (rapports, traumas)
+1. Tester avec plusieurs types de fichiers (rapports, recits)
 2. Tester avec des modifications complexes (multi-lignes)
 3. Créer des cas d'usage réels avec Noémie/Cécilia
 4. Documenter les patterns d'instructions pour l'IA

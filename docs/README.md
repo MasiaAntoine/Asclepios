@@ -6,7 +6,7 @@ Documentation technique et guides d'utilisation pour le dossier médical personn
 
 ### Fonctionnalités
 
-- **[Édition assistée par l'IA](edition-assistee.md)** — Permet à l'assistant Asclepios de proposer des modifications aux fichiers `data/` avec validation utilisateur
+- **[Édition assistée par l'IA](edition-assistee.md)** — Permet à l'assistant Asclepios de proposer des modifications aux fichiers `vault/` avec validation utilisateur
 - **[Persistance des propositions d'édition](persistance-edit-proposals.md)** — Historique complet des modifications proposées, appliquées et refusées
 - **[Personnalité conversationnelle](personnalite-conversationnelle.md)** — Couche indépendante qui définit *comment* Asclepios parle (empathie sans complaisance, capacité à challenger, gestion de l'incertitude…)
 - **[Agenda médical](agenda-medical.md)** — Affichage lecture seule du Google Agenda « Médical » via son adresse secrète iCal, avec injection des rendez-vous dans le contexte de l'assistant
@@ -17,7 +17,7 @@ Documentation technique et guides d'utilisation pour le dossier médical personn
 
 ### Architecture
 
-*(À venir : architecture générale, flux de données, sécurité)*
+- **[Vault](vault.md)** — arborescence `vault/`, conventions de nommage, sync OVH
 
 ### API
 
@@ -30,10 +30,10 @@ Documentation technique et guides d'utilisation pour le dossier médical personn
 ## Liens rapides
 
 - **Projet** : `/Users/antoine/Projects/projet_perso/asclepios`
-- **API** : `api/main.py` (FastAPI)
+- **API** : `api/routers/` (FastAPI)
 - **Frontend** : `app/` (Vue 3 + TypeScript)
-- **Données** : `data/` (vault local chiffré + sync OVH S3)
-- **Scripts** : `data/scripts/` et `scripts/`
+- **Données** : `vault/` (vault local chiffré + sync OVH S3)
+- **Scripts** : `vault/scripts/` et `scripts/`
 
 ## Contact
 

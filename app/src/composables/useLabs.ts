@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { fetchJson, fetchText } from '@/lib/dataClient'
 import { parseFrDate } from '@/lib/chartTheme'
+import { VAULT } from '@/lib/vault'
 import type { HistoriqueDose, Traitement } from '@/composables/useProfile'
 
 export interface LabsConfig {
@@ -41,7 +42,7 @@ export interface DosePoint {
 const DEFAULT_CONFIG: LabsConfig = {
   title: 'Analyses',
   subtitle: 'Marqueur biologique et traitement associé',
-  csv: 'labs.csv',
+  csv: 'suivi/labs.csv',
   primaryAnalyte: '',
   treatmentNameIncludes: '',
   markerUnit: '',
@@ -136,12 +137,12 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const cfg = await fetchJson<LabsConfig>('labs-config.json')
+    const cfg = await fetchJson<LabsConfig>(VAULT.labsConfig)
     config.value = { ...DEFAULT_CONFIG, ...cfg }
 
     const [csv, traitementsFile] = await Promise.all([
-      fetchText(cfg.csv || 'labs.csv'),
-      fetchJson<{ traitements: Traitement[] }>('traitements.json'),
+      fetchText(cfg.csv || VAULT.labs),
+      fetchJson<{ traitements: Traitement[] }>(VAULT.traitements),
     ])
 
     all.value = parseLabsCsv(csv)

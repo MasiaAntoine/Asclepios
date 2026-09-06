@@ -6,6 +6,7 @@ import {
   Building2,
   CreditCard,
   ExternalLink,
+  FileText,
   Globe,
   Languages,
   Link,
@@ -17,12 +18,20 @@ import {
 } from '@lucide/vue'
 import { useDoctors, doctorFullName, doctorPhotoUrl, type Doctor } from '@/composables/useDoctors'
 import DoctorEditDialog from '@/components/DoctorEditDialog.vue'
+import GenerateDoctorReportStepper from '@/components/GenerateDoctorReportStepper.vue'
 import PageShell from '@/components/PageShell.vue'
 
 const { doctors, loading, error, reload } = useDoctors()
 
 const selected = ref<Doctor | null>(null)
 const photoFailed = ref<Record<string, boolean>>({})
+const reportOpen = ref(false)
+const reportDoctorId = ref<string | null>(null)
+
+function openReportStepper(doctorId?: string) {
+  reportDoctorId.value = doctorId ?? selected.value?.id ?? null
+  reportOpen.value = true
+}
 
 async function onDoctorsChanged() {
   await reload()
@@ -50,6 +59,14 @@ function selectDoctor(doctor: Doctor) {
       <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
     </template>
     <template #actions>
+      <button
+        type="button"
+        class="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary)]/90"
+        @click="openReportStepper()"
+      >
+        <FileText :size="15" />
+        Rapport médecin
+      </button>
       <DoctorEditDialog mode="create" @saved="onDoctorsChanged" />
     </template>
 
@@ -175,6 +192,14 @@ function selectDoctor(doctor: Doctor) {
               </div>
 
               <div class="flex flex-col gap-2">
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary)]/90"
+                  @click="openReportStepper(selected.id)"
+                >
+                  <FileText :size="14" />
+                  Générer un rapport
+                </button>
                 <DoctorEditDialog
                   mode="edit"
                   :doctor="selected"
@@ -413,4 +438,9 @@ function selectDoctor(doctor: Doctor) {
         </Transition>
       </div>
   </PageShell>
+
+  <GenerateDoctorReportStepper
+    v-model:open="reportOpen"
+    :initial-doctor-id="reportDoctorId"
+  />
 </template>

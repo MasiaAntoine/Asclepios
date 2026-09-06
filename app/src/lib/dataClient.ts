@@ -1,9 +1,9 @@
-/** Base URL for private clinical data — never bundled into the app. */
-export const DATA_BASE = (import.meta.env.VITE_DATA_BASE as string | undefined) || '/data'
+/** Base URL for the private vault — never bundled into the app. */
+export const VAULT_BASE = (import.meta.env.VITE_VAULT_BASE as string | undefined) || '/vault'
 
 export function dataUrl(relativePath: string): string {
   const clean = relativePath.replace(/^\/+/, '')
-  return `${DATA_BASE.replace(/\/$/, '')}/${clean}`
+  return `${VAULT_BASE.replace(/\/$/, '')}/${clean}`
 }
 
 export async function fetchText(relativePath: string): Promise<string> {

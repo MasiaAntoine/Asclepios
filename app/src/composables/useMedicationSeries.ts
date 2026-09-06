@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { fetchJson } from '@/lib/dataClient'
 import { parseFrDate } from '@/lib/chartTheme'
+import { VAULT } from '@/lib/vault'
 import type { HistoriqueDose, Traitement } from '@/composables/useProfile'
 
 export interface MedicationConfig {
@@ -70,8 +71,8 @@ async function load() {
   error.value = null
   try {
     const [cfg, traitementsFile] = await Promise.all([
-      fetchJson<MedicationConfig>('medication-config.json'),
-      fetchJson<{ traitements: Traitement[]; mis_a_jour?: string }>('traitements.json'),
+      fetchJson<MedicationConfig>(VAULT.medicationConfig),
+      fetchJson<{ traitements: Traitement[]; mis_a_jour?: string }>(VAULT.traitements),
     ])
     config.value = { ...DEFAULT_CONFIG, ...cfg }
 

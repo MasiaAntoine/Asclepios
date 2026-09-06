@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { dataUrl, fetchJson } from '@/lib/dataClient'
+import { VAULT } from '@/lib/vault'
 
 export interface DoctorAddress {
   voie: string
@@ -77,7 +78,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    const data = await fetchJson<DoctorsFile>('doctors.json')
+    const data = await fetchJson<DoctorsFile>(VAULT.doctors)
     doctors.value = data.medecins ?? []
     loaded = true
   } catch (e) {

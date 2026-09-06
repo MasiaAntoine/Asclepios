@@ -3,7 +3,7 @@
 Cette couche est INDÉPENDANTE du moteur médical (sécurité, outils, données).
 Elle produit des instructions de style à injecter dans le prompt système.
 
-Charge sa configuration depuis `data/assistant-personality.md` : ce fichier
+Charge sa configuration depuis `vault/assistant/personality.md` : ce fichier
 est éditable par l'utilisateur (via l'UI, ou même via l'assistant lui-même
 grâce au système d'édition validée), sans toucher au code médical.
 """
@@ -110,7 +110,7 @@ def detect_exchange_type(message: str) -> ExchangeType:
 
 
 def _load_personality_md(data_dir: Path) -> str:
-    path = data_dir / "assistant-personality.md"
+    path = data_dir / "assistant" / "personality.md"
     try:
         text = path.read_text(encoding="utf-8").strip()
     except OSError:
@@ -174,7 +174,7 @@ class ConversationBehaviorProfile:
     """Produit les instructions de style pour une réponse donnée.
 
     Ne prend PAS de décision médicale, ne touche PAS aux outils / données :
-    c'est le rôle de la couche médicale de `main.py`.
+    c'est le rôle de la couche médicale (`api/routers/chats.py`).
     """
 
     def __init__(self, data_dir: Path):

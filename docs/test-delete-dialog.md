@@ -172,7 +172,7 @@ Inspecte avec DevTools :
 ### Flow complet : Supprimer puis sync
 
 1. Supprime une conversation
-2. Vérifie `data/chats/` → fichier `.json` supprimé
+2. Vérifie `vault/assistant/chats/` → fichier `.json` supprimé
 3. Attends le sync OVH automatique
 4. Vérifie les logs backend : "Push OVH"
 

@@ -28,24 +28,24 @@ Guide de test pour vérifier que les propositions sont bien sauvegardées et per
 
 5. **Vérifie le fichier**
    ```bash
-   tail data/relations/noemie-lacour.md
+   tail vault/humains/relations/noemie-lacour.md
    # Doit contenir "coucou" à la fin
    ```
 
 6. **Vérifie la sauvegarde dans le chat**
    ```bash
    # Trouve le dernier chat créé
-   ls -lt data/chats/*.json | head -1
+   ls -lt vault/assistant/chats/*.json | head -1
    
    # Lis son contenu
-   cat data/chats/{id}.json | jq '.messages[-1].edit_proposals'
+   cat vault/assistant/chats/{id}.json | jq '.messages[-1].edit_proposals'
    ```
    
    **Résultat attendu :**
    ```json
    [
      {
-       "path": "relations/noemie-lacour.md",
+       "path": "humains/relations/noemie-lacour.md",
        "description": "...",
        "old_string": "...",
        "new_string": "...",
@@ -78,13 +78,13 @@ Guide de test pour vérifier que les propositions sont bien sauvegardées et per
 
 3. **Vérifie le fichier**
    ```bash
-   cat data/relations/cecilia.md | grep "test refus"
+   cat vault/humains/relations/cecilia.md | grep "test refus"
    # Ne doit PAS trouver le texte
    ```
 
 4. **Vérifie la sauvegarde**
    ```bash
-   cat data/chats/{id}.json | jq '.messages[-1].edit_proposals[0].status'
+   cat vault/assistant/chats/{id}.json | jq '.messages[-1].edit_proposals[0].status'
    # Doit retourner "rejected"
    ```
 
@@ -111,7 +111,7 @@ Guide de test pour vérifier que les propositions sont bien sauvegardées et per
 
 4. **Vérifie les statuts**
    ```bash
-   cat data/chats/{id}.json | jq '.messages[-1].edit_proposals[].status'
+   cat vault/assistant/chats/{id}.json | jq '.messages[-1].edit_proposals[].status'
    # Doit retourner :
    # "applied"
    # "rejected"
@@ -148,7 +148,7 @@ Guide de test pour vérifier que les propositions sont bien sauvegardées et per
    ```bash
    # Terminal API
    # Cherche :
-   data: ✓ Fichier modifié : relations/noemie-lacour.md
+   data: ✓ Fichier modifié : humains/relations/noemie-lacour.md
    data: ▶  Sync
    data: Push OVH (nouveaux / modifiés uniquement)…
    data: [DONE]
@@ -157,12 +157,12 @@ Guide de test pour vérifier que les propositions sont bien sauvegardées et per
 3. **Vérifie le fichier local**
    ```bash
    git status
-   # Doit montrer : modified: data/relations/noemie-lacour.md
+   # Doit montrer : modified: vault/humains/relations/noemie-lacour.md
    ```
 
 4. **Vérifie le sync state**
    ```bash
-   cat .sync_state.json | jq '.["data/relations/noemie-lacour.md"]'
+   cat .sync_state.json | jq '.["vault/humains/relations/noemie-lacour.md"]'
    # Doit avoir un nouveau hash
    ```
 
@@ -172,7 +172,7 @@ Guide de test pour vérifier que les propositions sont bien sauvegardées et per
 
 **Request :**
 ```bash
-curl -X POST http://localhost:8000/api/data/update-edit-status \
+curl -X POST http://localhost:8000/api/vault/update-edit-status \
   -H "Content-Type: application/json" \
   -d '{
     "conversation_id": "20260830-180723-abc123",
@@ -194,7 +194,7 @@ curl -X POST http://localhost:8000/api/data/update-edit-status \
 
 **Statut invalide :**
 ```bash
-curl -X POST http://localhost:8000/api/data/update-edit-status \
+curl -X POST http://localhost:8000/api/vault/update-edit-status \
   -H "Content-Type: application/json" \
   -d '{
     "conversation_id": "...",
@@ -208,7 +208,7 @@ curl -X POST http://localhost:8000/api/data/update-edit-status \
 
 **Message introuvable :**
 ```bash
-curl -X POST http://localhost:8000/api/data/update-edit-status \
+curl -X POST http://localhost:8000/api/vault/update-edit-status \
   -H "Content-Type: application/json" \
   -d '{
     "conversation_id": "...",
@@ -244,7 +244,7 @@ curl -X POST http://localhost:8000/api/data/update-edit-status \
       "created_at": "2026-08-30T18:07:25Z",
       "edit_proposals": [
         {
-          "path": "relations/noemie-lacour.md",
+          "path": "humains/relations/noemie-lacour.md",
           "description": "Ajout texte de test",
           "old_string": "...",
           "new_string": "...",
@@ -263,12 +263,12 @@ curl -X POST http://localhost:8000/api/data/update-edit-status \
 
 ```bash
 # Valider que tous les chats sont du JSON valide
-for f in data/chats/*.json; do
+for f in vault/assistant/chats/*.json; do
   jq empty "$f" 2>&1 || echo "❌ Invalid JSON: $f"
 done
 
 # Compter les propositions par statut (tous les chats)
-cat data/chats/*.json | jq -s '[.[].messages[].edit_proposals[]?.status] | group_by(.) | map({status: .[0], count: length})'
+cat vault/assistant/chats/*.json | jq -s '[.[].messages[].edit_proposals[]?.status] | group_by(.) | map({status: .[0], count: length})'
 ```
 
 ## Checklist de validation
@@ -293,11 +293,11 @@ cat data/chats/*.json | jq -s '[.[].messages[].edit_proposals[]?.status] | group
 
 **Vérifications :**
 1. Check backend logs : "Réponse enregistrée dans le vault"
-2. Check fichier JSON : `cat data/chats/{id}.json | jq '.messages[-1]'`
+2. Check fichier JSON : `cat vault/assistant/chats/{id}.json | jq '.messages[-1]'`
 3. Check que `edit_proposals` est présent
 4. Check que le frontend charge bien toutes les propriétés du message
 
-**Solution probable :** Le backend ne sauvegarde pas les propositions → vérifier ligne 1710 de `api/main.py`
+**Solution probable :** Le backend ne sauvegarde pas les propositions → vérifier ligne 1710 de `api/routers/`
 
 ### Statut ne se met pas à jour
 
@@ -322,17 +322,17 @@ Pour mesurer l'utilisation de la fonctionnalité :
 
 ```bash
 # Nombre total de propositions
-cat data/chats/*.json | jq '[.[].messages[].edit_proposals[]?] | length'
+cat vault/assistant/chats/*.json | jq '[.[].messages[].edit_proposals[]?] | length'
 
 # Nombre par statut
-cat data/chats/*.json | jq -s '
+cat vault/assistant/chats/*.json | jq -s '
   [.[].messages[].edit_proposals[]?] 
   | group_by(.status) 
   | map({status: .[0].status, count: length})
 '
 
 # Taux d'application
-cat data/chats/*.json | jq -s '
+cat vault/assistant/chats/*.json | jq -s '
   [.[].messages[].edit_proposals[]?] 
   | {
       total: length,

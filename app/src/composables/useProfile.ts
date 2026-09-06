@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { dataUrl, fetchJson, fetchText } from '@/lib/dataClient'
+import { VAULT } from '@/lib/vault'
 
 export interface Personne {
   prenom: string
@@ -7,9 +8,9 @@ export interface Personne {
   date_naissance?: string
   lien?: string
   personne_de_confiance?: boolean
-  /** Chemin relatif sous data/ (ex. personnes/eva-masia.png) */
+  /** Chemin relatif sous vault/ (ex. humains/photos/eva-masia.jpg) */
   photo?: string | null
-  /** Fichier MD dans data/personnes/ */
+  /** Fichier MD dans vault/humains/personnes/ */
   dossier?: string | null
 }
 
@@ -37,7 +38,7 @@ export interface RelationPassee {
   debut?: string | null
   fin?: string | null
   note?: string | null
-  /** Fichier MD dans data/relations/ (contexte narratif). */
+  /** Fichier MD dans vault/humains/relations/ (contexte narratif). */
   dossier?: string | null
   /** Personnes / plans après la relation (contexte, pas inventaire). */
   apres?: RelationSuite[]
@@ -105,10 +106,10 @@ export interface Profil {
   taille_cm: number
   securite_sociale?: SecuriteSociale
   mutuelle?: Mutuelle
-  tabac: {
+  habitude: {
     type: string
     debut: string
-    nicotine_mg_ml?: number
+    dose?: number
     note?: string
   }
   parents: {
@@ -240,9 +241,9 @@ async function load() {
   error.value = null
   try {
     const [profilData, traitementsFile, poidsRaw] = await Promise.all([
-      fetchJson<Profil>('profil.json'),
-      fetchJson<{ traitements: Traitement[]; mis_a_jour: string }>('traitements.json'),
-      fetchText('poids.csv'),
+      fetchJson<Profil>(VAULT.profil),
+      fetchJson<{ traitements: Traitement[]; mis_a_jour: string }>(VAULT.traitements),
+      fetchText(VAULT.poids),
     ])
     profil.value = profilData
     traitements.value = traitementsFile.traitements
@@ -288,7 +289,7 @@ export function useProfile() {
   )
 
   /** Photo served from private data volume — not shipped in the app repo */
-  const photoUrl = computed(() => dataUrl('profil.png'))
+  const photoUrl = computed(() => dataUrl(VAULT.photo))
 
   return {
     profil,

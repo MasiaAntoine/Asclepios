@@ -4,10 +4,10 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 import { servePrivateData } from './vite.privateData.ts'
 
-const dataDir = path.resolve(import.meta.dirname, '../data')
+const vaultDir = path.resolve(import.meta.dirname, '../vault')
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss(), servePrivateData(dataDir)],
+  plugins: [vue(), tailwindcss(), servePrivateData(vaultDir)],
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),

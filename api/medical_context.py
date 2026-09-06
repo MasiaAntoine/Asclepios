@@ -1,4 +1,4 @@
-"""Construit un contexte textuel à partir du dossier médical local (data/)."""
+"""Construit un contexte textuel à partir du vault médical local (vault/)."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def build_medical_context(data_dir: Path) -> str:
         budget -= len(chunk)
 
     # Profil
-    profil = _read_json(data_dir / "profil.json")
+    profil = _read_json(data_dir / "identite" / "profil.json")
     if profil:
         add(
             "Profil patient",
@@ -70,29 +70,31 @@ def build_medical_context(data_dir: Path) -> str:
         mut = profil.get("mutuelle") or {}
         if isinstance(mut, dict):
             notice_name = str(mut.get("notice_md") or "").strip()
-    notice_path = data_dir / (notice_name or "henner-notice-complementaire-sante.md")
+    notice_path = data_dir / (
+        notice_name or "mutuelle/henner-notice-complementaire-sante.md"
+    )
     notice = _read_text(notice_path)
     if notice.strip():
         add("Notice mutuelle (garanties)", _truncate(notice, 25_000))
 
     # Poids
-    poids = _read_text(data_dir / "poids.csv")
+    poids = _read_text(data_dir / "suivi" / "poids.csv")
     if poids.strip():
         add("Poids (CSV)", poids)
 
     # Labs
-    labs_cfg = _read_json(data_dir / "labs-config.json")
+    labs_cfg = _read_json(data_dir / "suivi" / "labs-config.json")
     if labs_cfg:
         add("Config analyses", json.dumps(labs_cfg, ensure_ascii=False, indent=2))
-    labs = _read_text(data_dir / "labs.csv")
+    labs = _read_text(data_dir / "suivi" / "labs.csv")
     if labs.strip():
         add("Analyses labo (CSV)", labs)
 
     # Traitements
-    med_cfg = _read_json(data_dir / "medication-config.json")
+    med_cfg = _read_json(data_dir / "suivi" / "medication-config.json")
     if med_cfg:
         add("Config posologie suivie", json.dumps(med_cfg, ensure_ascii=False, indent=2))
-    traitements = _read_json(data_dir / "traitements.json")
+    traitements = _read_json(data_dir / "suivi" / "traitements.json")
     if traitements:
         add("Traitements & historique de doses", json.dumps(traitements, ensure_ascii=False, indent=2))
 
@@ -108,7 +110,7 @@ def build_medical_context(data_dir: Path) -> str:
             add("Fiches médicaments", "\n\n".join(med_blocks))
 
     # Médecins
-    doctors = _read_json(data_dir / "doctors.json")
+    doctors = _read_json(data_dir / "humains" / "medecins" / "doctors.json")
     if doctors:
         add("Médecins", json.dumps(doctors, ensure_ascii=False, indent=2))
 
@@ -126,7 +128,7 @@ def build_medical_context(data_dir: Path) -> str:
         pass  # l'agenda est facultatif : ne jamais casser le contexte
 
     # Dossiers relations passées (contexte affectif / patterns)
-    rel_dir = data_dir / "relations"
+    rel_dir = data_dir / "humains" / "relations"
     if rel_dir.is_dir():
         rel_blocks = []
         for path in sorted(rel_dir.glob("*.md")):
@@ -140,39 +142,41 @@ def build_medical_context(data_dir: Path) -> str:
             add("Dossiers relations passées", "\n\n---\n\n".join(rel_blocks))
 
     # Dossiers famille, entourage & animaux
-    personnes_dir = data_dir / "personnes"
-    if personnes_dir.is_dir():
-        # Inventaire des photos (pour que l'IA sache qu'elles existent et où)
+    personnes_dir = data_dir / "humains" / "personnes"
+    photos_dir = data_dir / "humains" / "photos"
+    if personnes_dir.is_dir() or photos_dir.is_dir():
         photo_lines: list[str] = []
-        for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
-            for path in sorted(personnes_dir.glob(ext)):
-                photo_lines.append(
-                    f"- `{path.relative_to(data_dir).as_posix()}` "
-                    f"(ouvrir ce fichier pour voir / confirmer l'apparence)"
-                )
+        if photos_dir.is_dir():
+            for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp"):
+                for path in sorted(photos_dir.glob(ext)):
+                    photo_lines.append(
+                        f"- `{path.relative_to(data_dir).as_posix()}` "
+                        f"(ouvrir ce fichier pour voir / confirmer l'apparence)"
+                    )
         if photo_lines:
             add(
-                "Photos famille / entourage / animaux",
-                "Fichiers images disponibles dans data/personnes/. "
+                "Photos famille / entourage / animaux / médecins",
+                "Fichiers images disponibles dans vault/humains/photos/. "
                 "Les descriptions physiques sont aussi dans la section « Apparence » "
                 "de chaque dossier .md ci-dessous.\n\n"
                 + "\n".join(photo_lines),
             )
 
         personnes_blocks = []
-        for path in sorted(personnes_dir.glob("*.md")):
-            if path.name.lower() == "readme.md":
-                continue
-            raw = _read_text(path)
-            if not raw.strip():
-                continue
-            personnes_blocks.append(f"### {path.stem}\n\n{_truncate(raw, 5_000)}")
+        if personnes_dir.is_dir():
+            for path in sorted(personnes_dir.glob("*.md")):
+                if path.name.lower() == "readme.md":
+                    continue
+                raw = _read_text(path)
+                if not raw.strip():
+                    continue
+                personnes_blocks.append(f"### {path.stem}\n\n{_truncate(raw, 5_000)}")
         if personnes_blocks:
             add("Dossiers famille, entourage & animaux", "\n\n---\n\n".join(personnes_blocks))
 
-    # Rapports + traumas (plus récents d'abord)
+    # Rapports + récits (plus récents d'abord)
     doc_blocks: list[str] = []
-    for folder in ("rapports", "traumas"):
+    for folder in ("rapports", "recits"):
         d = data_dir / folder
         if not d.is_dir():
             continue

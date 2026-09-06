@@ -6,9 +6,10 @@ __pycache__/
 .rclone/
 .sync_state.json
 *.key
-data/*
-!data/.gitkeep
 
-# Cache parsing prises de sang / ordonnances
-data/prise-de-sang/.cache/
-data/ordonnances/.cache/
+# Ancien nom (au cas où un clone a encore le dossier)
+data/
+
+# Vault privé (sync OVH) — seul .gitkeep est versionné
+vault/*
+!vault/.gitkeep

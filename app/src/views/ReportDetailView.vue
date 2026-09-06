@@ -124,6 +124,16 @@ const parsed = computed(() => {
     return `<a href="${href ?? '#'}"${titleAttr}${rel}>${text}</a>`
   }
 
+  renderer.image = ({ href, title, text }: Tokens.Image) => {
+    let src = href || ''
+    if (src && !/^https?:\/\//i.test(src) && !src.startsWith('/')) {
+      src = `/vault/rapports/${src.replace(/^\.\//, '')}`
+    }
+    const titleAttr = title ? ` title="${title}"` : ''
+    const alt = text || ''
+    return `<img src="${src}" alt="${alt}"${titleAttr} class="report-figure" />`
+  }
+
   const html = (marked.parse(report.value.content, { renderer, gfm: true }) as string)
     .replace(/<table>/g, '<div class="table-wrap"><table>')
     .replace(/<\/table>/g, '</table></div>')
