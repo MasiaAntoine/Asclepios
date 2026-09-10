@@ -63,9 +63,10 @@ const {
   doses: labsDoses,
   linkedTreatment,
   loading: labsLoading,
+  syncing: labsSyncing,
   error: labsError,
   reload: reloadLabs,
-} = useLabs()
+} = useLabs({ autoload: false })
 
 const {
   config: medConfig,
@@ -78,8 +79,17 @@ const {
   reload: reloadMed,
 } = useMedicationSeries()
 
+/** À chaque visite de l'onglet thyroïde : re-sync PDF → labs.csv puis recharge. */
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'labs') void reloadLabs({ sync: true })
+  },
+  { immediate: true },
+)
+
 async function onLabsEntryAdded() {
-  await reloadLabs()
+  await reloadLabs({ sync: false })
 }
 
 async function onRxEntryAdded() {
@@ -466,8 +476,8 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
           <div v-if="labsError" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {{ labsError }}
           </div>
-          <div v-else-if="labsLoading && !primary.length" class="py-16 text-center text-sm text-[var(--muted-foreground)]">
-            Chargement…
+          <div v-else-if="(labsLoading || labsSyncing) && !primary.length" class="py-16 text-center text-sm text-[var(--muted-foreground)]">
+            {{ labsSyncing ? 'Mise à jour depuis les prises de sang…' : 'Chargement…' }}
           </div>
 
           <template v-else>

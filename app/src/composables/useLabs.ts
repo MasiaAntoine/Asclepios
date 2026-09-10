@@ -119,49 +119,109 @@ function buildDoseSeries(historique: HistoriqueDose[]): DosePoint[] {
     .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime())
 }
 
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api'
+
 const config = ref<LabsConfig>({ ...DEFAULT_CONFIG })
 const all = ref<LabPoint[]>([])
 const doses = ref<DosePoint[]>([])
 const linkedTreatment = ref<Traitement | null>(null)
 const loading = ref(false)
+const syncing = ref(false)
 const error = ref<string | null>(null)
+const lastSync = ref<{ added: number; updated: number; changed: boolean } | null>(null)
 let loaded = false
+let loadPromise: Promise<void> | null = null
 
-export async function reloadLabs() {
-  loaded = false
-  await load()
-}
-
-async function load() {
-  if (loaded || loading.value) return
-  loading.value = true
-  error.value = null
+/** Merge TSH (et panel thyroïde) depuis vault/prise-de-sang vers labs.csv. */
+async function syncFromPdfs(): Promise<void> {
+  syncing.value = true
   try {
-    const cfg = await fetchJson<LabsConfig>(VAULT.labsConfig)
-    config.value = { ...DEFAULT_CONFIG, ...cfg }
-
-    const [csv, traitementsFile] = await Promise.all([
-      fetchText(cfg.csv || VAULT.labs),
-      fetchJson<{ traitements: Traitement[] }>(VAULT.traitements),
-    ])
-
-    all.value = parseLabsCsv(csv)
-    const needle = (cfg.treatmentNameIncludes || '').toLowerCase()
-    const linked = needle
-      ? traitementsFile.traitements.find((t) => t.nom.toLowerCase().includes(needle)) ?? null
-      : null
-    linkedTreatment.value = linked
-    doses.value = linked ? buildDoseSeries(linked.historique) : []
-    loaded = true
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Erreur de chargement'
+    const res = await fetch(`${API_BASE}/labs/sync-from-pdfs`, { method: 'POST' })
+    if (!res.ok) {
+      let detail = `Sync labs HTTP ${res.status}`
+      try {
+        const body = await res.json()
+        if (body?.detail) detail = String(body.detail)
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail)
+    }
+    const summary = (await res.json()) as {
+      added?: number
+      updated?: number
+      changed?: boolean
+    }
+    lastSync.value = {
+      added: summary.added ?? 0,
+      updated: summary.updated ?? 0,
+      changed: Boolean(summary.changed),
+    }
   } finally {
-    loading.value = false
+    syncing.value = false
   }
 }
 
-export function useLabs() {
-  if (!loaded && !loading.value) void load()
+export async function reloadLabs(options: { sync?: boolean } = { sync: true }) {
+  if (loadPromise) {
+    try {
+      await loadPromise
+    } catch {
+      /* ignore */
+    }
+  }
+  loaded = false
+  loadPromise = null
+  await load(options)
+}
+
+async function load(options: { sync?: boolean } = { sync: true }) {
+  if (loaded) return
+  if (loadPromise) return loadPromise
+
+  loadPromise = (async () => {
+    loading.value = true
+    error.value = null
+    try {
+      if (options.sync !== false) {
+        try {
+          await syncFromPdfs()
+        } catch (e) {
+          // La sync ne doit pas bloquer l'affichage du CSV existant.
+          console.warn('[labs] sync-from-pdfs:', e)
+        }
+      }
+
+      const cfg = await fetchJson<LabsConfig>(VAULT.labsConfig)
+      config.value = { ...DEFAULT_CONFIG, ...cfg }
+
+      const [csv, traitementsFile] = await Promise.all([
+        fetchText(cfg.csv || VAULT.labs),
+        fetchJson<{ traitements: Traitement[] }>(VAULT.traitements),
+      ])
+
+      all.value = parseLabsCsv(csv)
+      const needle = (cfg.treatmentNameIncludes || '').toLowerCase()
+      const linked = needle
+        ? traitementsFile.traitements.find((t) => t.nom.toLowerCase().includes(needle)) ?? null
+        : null
+      linkedTreatment.value = linked
+      doses.value = linked ? buildDoseSeries(linked.historique) : []
+      loaded = true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Erreur de chargement'
+    } finally {
+      loading.value = false
+      loadPromise = null
+    }
+  })()
+
+  return loadPromise
+}
+
+export function useLabs(options: { autoload?: boolean } = {}) {
+  const autoload = options.autoload !== false
+  if (autoload && !loaded && !loading.value && !loadPromise) void load()
 
   const primary = computed(() => {
     const key = config.value.primaryAnalyte.toUpperCase()
@@ -193,6 +253,8 @@ export function useLabs() {
     latestPrimary,
     currentDose,
     loading,
+    syncing,
+    lastSync,
     error,
     load,
     reload: reloadLabs,

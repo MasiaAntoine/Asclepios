@@ -106,12 +106,36 @@ async def upload_lab_pdf(file: UploadFile = File(...)):
     async def stream() -> AsyncGenerator[bytes, None]:
         yield f"data: \u2713 PDF enregistré : {final_path.name}\n\n".encode()
         yield f"data: ID:{final_id}\n\n".encode()
+        try:
+            from api.labs_sync import sync_labs_csv_from_pdfs
+
+            summary = sync_labs_csv_from_pdfs()
+            if summary.get("changed"):
+                yield (
+                    "data: \u2713 labs.csv mis à jour "
+                    f"(+{summary.get('added', 0)} / ~{summary.get('updated', 0)})\n\n"
+                ).encode()
+            else:
+                yield "data: labs.csv déjà à jour\n\n".encode()
+        except Exception as sync_exc:
+            yield f"data: Sync labs.csv ignorée : {sync_exc}\n\n".encode()
         yield "data: Push OVH (nouveaux / modifiés uniquement)…\n\n".encode()
         async for chunk in push_stream():
             yield chunk
         yield b"data: [DONE]\n\n"
 
     return sse(stream())
+
+
+@router.post("/sync-from-pdfs")
+def sync_labs_from_pdfs() -> dict:
+    """Met à jour labs.csv depuis les PDF de prise de sang (merge idempotent)."""
+    from api.labs_sync import sync_labs_csv_from_pdfs
+
+    try:
+        return sync_labs_csv_from_pdfs()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/add")
