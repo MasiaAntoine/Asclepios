@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { Check, FileEdit, Loader, X } from "@lucide/vue";
 import * as Diff from "diff";
+import { apiFetch } from '@/lib/apiFetch'
 
 interface EditProposal {
   path: string;
@@ -45,7 +46,7 @@ async function updateStatus(status: "applied" | "rejected") {
   }
 
   try {
-    await fetch(`${API_BASE}/vault/update-edit-status`, {
+    await apiFetch(`${API_BASE}/vault/update-edit-status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -66,7 +67,7 @@ async function applyEdit() {
   error.value = null;
 
   try {
-    const res = await fetch(`${API_BASE}/vault/apply-edit`, {
+    const res = await apiFetch(`${API_BASE}/vault/apply-edit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

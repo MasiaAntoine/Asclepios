@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSseStream } from '@/composables/usePdfApi'
+import { useAuth } from '@/composables/useAuth'
 import PageShell from '@/components/PageShell.vue'
 import {
   Cloud,
@@ -9,9 +11,11 @@ import {
   HardDrive,
   KeyRound,
   Loader,
+  LogOut,
   Server,
   X,
 } from '@lucide/vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 interface SettingsStatus {
   cursor_api_configured: boolean
@@ -29,6 +33,9 @@ interface SettingsStatus {
   storage_eur_ht_per_month: number
   storage_eur_ttc_per_month: number
 }
+
+const router = useRouter()
+const { logout } = useAuth()
 
 const status = ref<SettingsStatus | null>(null)
 const statusError = ref<string | null>(null)
@@ -51,7 +58,7 @@ async function loadStatus() {
   statusLoading.value = true
   statusError.value = null
   try {
-    const res = await fetch('/api/settings/status')
+    const res = await apiFetch('/api/settings/status')
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     status.value = (await res.json()) as SettingsStatus
   } catch (e) {
@@ -66,6 +73,11 @@ async function runAction(endpoint: string, label: string) {
   showTerminal.value = true
   await runStream(endpoint)
   await loadStatus()
+}
+
+async function onLogout() {
+  await logout()
+  await router.push({ name: 'login' })
 }
 
 function scrollBottom() {
@@ -224,6 +236,18 @@ onMounted(() => {
             Annuler
           </button>
         </div>
+      </section>
+
+      <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <h2 class="mb-3 text-sm font-semibold text-[var(--foreground)]">Session</h2>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--accent)]"
+          @click="onLogout"
+        >
+          <LogOut :size="15" />
+          Déconnexion
+        </button>
       </section>
 
       <!-- Terminal -->

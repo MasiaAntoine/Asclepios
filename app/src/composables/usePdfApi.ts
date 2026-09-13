@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 const API_BASE = '/api'
 
@@ -18,7 +19,7 @@ export function useSseStream() {
     abortController = new AbortController()
 
     try {
-      const res = await fetch(`${API_BASE}${endpoint}`, {
+      const res = await apiFetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         ...init,
         signal: abortController.signal,

@@ -1,4 +1,5 @@
 .env
+.env.prod
 .venv/
 __pycache__/
 *.pyc
@@ -13,3 +14,4 @@ data/
 # Vault privé (sync OVH) — seul .gitkeep est versionné
 vault/*
 !vault/.gitkeep
+.auth-password-local

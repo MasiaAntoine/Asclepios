@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 const API_BASE = '/api'
 
@@ -69,7 +70,7 @@ export interface LabPdfDetail {
 }
 
 export async function fetchLabPdfList(): Promise<LabPdfListItem[]> {
-  const res = await fetch(`${API_BASE}/labs/pdfs`)
+  const res = await apiFetch(`${API_BASE}/labs/pdfs`)
   if (!res.ok) throw new Error(`Liste indisponible (${res.status})`)
   const data = (await res.json()) as { items: LabPdfListItem[] }
   return data.items ?? []
@@ -77,7 +78,7 @@ export async function fetchLabPdfList(): Promise<LabPdfListItem[]> {
 
 export async function fetchLabPdfDetail(id: string, force = false): Promise<LabPdfDetail> {
   const q = force ? '?force=true' : ''
-  const res = await fetch(`${API_BASE}/labs/pdfs/${encodeURIComponent(id)}${q}`)
+  const res = await apiFetch(`${API_BASE}/labs/pdfs/${encodeURIComponent(id)}${q}`)
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
     try {

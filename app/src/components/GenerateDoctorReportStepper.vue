@@ -12,6 +12,7 @@ import {
 import StepperDrawer, { type StepperStep } from '@/components/StepperDrawer.vue'
 import { useDoctors, doctorFullName, doctorPhotoUrl, type Doctor } from '@/composables/useDoctors'
 import { parseEventDate, formatTime, type AgendaEvent } from '@/composables/useAgenda'
+import { apiFetch } from '@/lib/apiFetch'
 
 const props = defineProps<{
   initialDoctorId?: string | null
@@ -123,7 +124,7 @@ async function loadContext() {
       params.set('date_from', dateFrom.value)
       params.set('date_to', dateTo.value)
     }
-    const res = await fetch(`/api/reports/doctor-context?${params}`)
+    const res = await apiFetch(`/api/reports/doctor-context?${params}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     if (seq !== contextSeq) return
@@ -166,7 +167,7 @@ async function generate() {
   generatedId.value = null
   logs.value = []
   try {
-    const res = await fetch('/api/reports/generate-for-doctor', {
+    const res = await apiFetch('/api/reports/generate-for-doctor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -14,6 +14,7 @@ import {
   Upload,
   X,
 } from '@lucide/vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 const router = useRouter()
 const { items, loading, error, load } = useLabPdfs()
@@ -102,7 +103,7 @@ async function onFileSelected(ev: Event) {
   try {
     const form = new FormData()
     form.append('file', file, file.name)
-    const res = await fetch('/api/labs/pdfs/upload', { method: 'POST', body: form })
+    const res = await apiFetch('/api/labs/pdfs/upload', { method: 'POST', body: form })
     if (!res.ok) {
       let detail = `HTTP ${res.status}`
       try {

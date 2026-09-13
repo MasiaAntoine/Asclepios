@@ -3,6 +3,7 @@ import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { BrainCircuit, ExternalLink, Loader2, RotateCcw, Sparkles } from '@lucide/vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 const emit = defineEmits<{
   generated: [reportId: string]
@@ -46,7 +47,7 @@ async function generate() {
   logs.value = []
 
   try {
-    const resp = await fetch('/api/reports/generate', {
+    const resp = await apiFetch('/api/reports/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text.value }),

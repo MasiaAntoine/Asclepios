@@ -19,6 +19,7 @@ import { useProfile } from "@/composables/useProfile";
 import PageShell from "@/components/PageShell.vue";
 import EditProposal from "@/components/EditProposal.vue";
 import DeleteConversationDialog from "@/components/DeleteConversationDialog.vue";
+import { apiFetch } from '@/lib/apiFetch'
 
 interface EditProposalData {
   path: string;
@@ -150,7 +151,7 @@ watch(
 async function loadConversations() {
   listLoading.value = true;
   try {
-    const res = await fetch(`${API_BASE}/chats`);
+    const res = await apiFetch(`${API_BASE}/chats`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as { conversations: ConversationMeta[] };
     conversations.value = data.conversations ?? [];
@@ -169,7 +170,7 @@ async function openConversation(id: string) {
   error.value = null;
   reportStatus.value = "";
   try {
-    const res = await fetch(`${API_BASE}/chats/${id}`);
+    const res = await apiFetch(`${API_BASE}/chats/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as {
       id: string;
@@ -226,7 +227,7 @@ async function confirmDelete() {
   if (activeId.value === id) startNewConversation();
 
   try {
-    const res = await fetch(`${API_BASE}/chats/${id}/delete`, { method: "POST" });
+    const res = await apiFetch(`${API_BASE}/chats/${id}/delete`, { method: "POST" });
     if (res.status === 403) {
       conversations.value = previous;
       error.value = "Conversation liée à un rapport : suppression impossible.";
@@ -288,7 +289,7 @@ async function generateReport() {
   generatingReport.value = true;
 
   try {
-    const res = await fetch(
+    const res = await apiFetch(
       `${API_BASE}/chats/${activeId.value}/generate-report`,
       {
         method: "POST",
@@ -373,7 +374,7 @@ async function send() {
   abortController = new AbortController();
 
   try {
-    const res = await fetch(`${API_BASE}/chat`, {
+    const res = await apiFetch(`${API_BASE}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

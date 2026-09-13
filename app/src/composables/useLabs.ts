@@ -3,6 +3,7 @@ import { fetchJson, fetchText } from '@/lib/dataClient'
 import { parseFrDate } from '@/lib/chartTheme'
 import { VAULT } from '@/lib/vault'
 import type { HistoriqueDose, Traitement } from '@/composables/useProfile'
+import { apiFetch } from '@/lib/apiFetch'
 
 export interface LabsConfig {
   title: string
@@ -136,7 +137,7 @@ let loadPromise: Promise<void> | null = null
 async function syncFromPdfs(): Promise<void> {
   syncing.value = true
   try {
-    const res = await fetch(`${API_BASE}/labs/sync-from-pdfs`, { method: 'POST' })
+    const res = await apiFetch(`${API_BASE}/labs/sync-from-pdfs`, { method: 'POST' })
     if (!res.ok) {
       let detail = `Sync labs HTTP ${res.status}`
       try {

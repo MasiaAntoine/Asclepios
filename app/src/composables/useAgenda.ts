@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 /**
  * Agenda médical en lecture seule.
@@ -129,7 +130,7 @@ let loaded = false
 
 async function fetchStatus() {
   try {
-    const res = await fetch(`${API_BASE}/agenda/status`)
+    const res = await apiFetch(`${API_BASE}/agenda/status`)
     if (res.ok) status.value = (await res.json()) as AgendaStatus
   } catch {
     // Statut non bloquant : l'erreur utile viendra de /events.
@@ -144,7 +145,7 @@ async function load(refresh = false) {
     const url = new URL(`${API_BASE}/agenda/events`, window.location.origin)
     if (refresh) url.searchParams.set('refresh', 'true')
 
-    const res = await fetch(url.toString().replace(window.location.origin, ''))
+    const res = await apiFetch(url.toString().replace(window.location.origin, ''))
     if (!res.ok) {
       let detail = `Erreur ${res.status}`
       try {

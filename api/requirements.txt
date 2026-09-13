@@ -12,3 +12,7 @@ cursor-sdk
 httpx
 icalendar
 recurring-ical-events
+argon2-cffi
+itsdangerous
+pyotp
+qrcode

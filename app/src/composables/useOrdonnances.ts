@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 const API_BASE = '/api'
 
@@ -56,7 +57,7 @@ export interface OrdonnanceDetail {
 }
 
 export async function fetchOrdonnanceList(): Promise<OrdonnanceListItem[]> {
-  const res = await fetch(`${API_BASE}/ordonnances/pdfs`)
+  const res = await apiFetch(`${API_BASE}/ordonnances/pdfs`)
   if (!res.ok) throw new Error(`Liste indisponible (${res.status})`)
   const data = (await res.json()) as { items: OrdonnanceListItem[] }
   return data.items ?? []
@@ -67,7 +68,7 @@ export async function fetchOrdonnanceDetail(
   force = false,
 ): Promise<OrdonnanceDetail> {
   const q = force ? '?force=true' : ''
-  const res = await fetch(`${API_BASE}/ordonnances/pdfs/${encodeURIComponent(id)}${q}`)
+  const res = await apiFetch(`${API_BASE}/ordonnances/pdfs/${encodeURIComponent(id)}${q}`)
   if (!res.ok) {
     let detail = `HTTP ${res.status}`
     try {

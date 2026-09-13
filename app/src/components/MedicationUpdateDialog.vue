@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { Loader, Pencil, Save, X } from '@lucide/vue'
 import { useSseStream } from '@/composables/usePdfApi'
+import { apiFetch } from '@/lib/apiFetch'
 
 const props = defineProps<{
   fichier: string
@@ -25,7 +26,7 @@ async function openDialog() {
   fetching.value = true
   fetchError.value = null
   try {
-    const res = await fetch(`/api/medication/${encodeURIComponent(props.fichier)}`)
+    const res = await apiFetch(`/api/medication/${encodeURIComponent(props.fichier)}`)
     if (!res.ok) throw new Error(`Erreur ${res.status}`)
     const data = await res.json() as { posologie?: string; arret_temporaire?: string; notes?: string }
     posologie.value = data.posologie ?? ''

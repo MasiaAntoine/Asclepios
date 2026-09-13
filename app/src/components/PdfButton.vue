@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Download, Loader } from '@lucide/vue'
+import { apiFetch } from '@/lib/apiFetch'
 
 const props = defineProps<{
   /** Endpoint GET /api/… qui génère et renvoie le PDF (ou ZIP). */
@@ -31,7 +32,7 @@ async function download() {
   running.value = true
   error.value = null
   try {
-    const res = await fetch(`/api${props.downloadEndpoint}`)
+    const res = await apiFetch(`/api${props.downloadEndpoint}`)
     if (!res.ok) {
       let detail = `HTTP ${res.status}`
       try {

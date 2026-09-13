@@ -10,11 +10,13 @@ services:
       - ./api:/workspace/api:ro
       - ./scripts:/workspace/scripts:ro
       - ./vault:/workspace/vault
-      - ./.env:/workspace/.env:ro
+      # Dev : .env — Prod : ASCLEPIOS_ENV_FILE=.env.prod docker compose up -d
+      - ./${ASCLEPIOS_ENV_FILE:-.env}:/workspace/${ASCLEPIOS_ENV_FILE:-.env}:ro
       - ./brand:/workspace/brand:ro
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Europe/Paris
+      - ASCLEPIOS_ENV_FILE=${ASCLEPIOS_ENV_FILE:-.env}
     restart: unless-stopped
 
   app:
@@ -25,14 +27,14 @@ services:
       - "5173:5173"
     volumes:
       - ./app/src:/workspace/app/src
+      - ./app/public:/workspace/app/public:ro
       - ./app/index.html:/workspace/app/index.html
       - ./app/vite.config.ts:/workspace/app/vite.config.ts
-      - ./app/vite.privateData.ts:/workspace/app/vite.privateData.ts
       - ./app/tsconfig.app.json:/workspace/app/tsconfig.app.json
       - ./app/tsconfig.node.json:/workspace/app/tsconfig.node.json
+      - ./app/tsconfig.json:/workspace/app/tsconfig.json
       - ./app/package.json:/workspace/app/package.json
       - ./app/package-lock.json:/workspace/app/package-lock.json
-      - ./vault:/workspace/vault:ro
       - app_node_modules:/workspace/app/node_modules
     environment:
       - NODE_ENV=development
