@@ -75,12 +75,12 @@ const maxWidthClass: Record<string, string> = {
         noScroll && !flush ? 'flex min-h-0 flex-col' : '',
       ]"
     >
-      <div
-        v-if="flush"
-        class="h-full"
-      >
-        <slot />
-      </div>
+        <div
+          v-if="flush"
+          class="h-full min-h-0"
+        >
+          <slot />
+        </div>
       <div
         v-else
         :class="[

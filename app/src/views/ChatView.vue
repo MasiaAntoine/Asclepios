@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { marked } from "marked";
 import {
+  EllipsisVertical,
   FileText,
   Loader,
   Lock,
@@ -13,9 +14,11 @@ import {
   Sparkles,
   Trash2,
   UserRound,
+  X,
 } from "@lucide/vue";
 import logoIconUrl from "@/assets/logo-icon.png";
 import { useProfile } from "@/composables/useProfile";
+import { useChatKeyboardLayout } from "@/composables/useChatKeyboardLayout";
 import PageShell from "@/components/PageShell.vue";
 import EditProposal from "@/components/EditProposal.vue";
 import DeleteConversationDialog from "@/components/DeleteConversationDialog.vue";
@@ -72,7 +75,23 @@ const statusLine = ref("");
 const reportStatus = ref("");
 const error = ref<string | null>(null);
 const listEl = ref<HTMLElement | null>(null);
+const inputEl = ref<HTMLTextAreaElement | null>(null);
+/** Liste des conversations (tiroir mobile). */
+const listOpen = ref(false);
 let abortController: AbortController | null = null;
+
+const { shellStyle, keyboardOpen, syncViewport } = useChatKeyboardLayout(listEl);
+
+function autoResizeInput() {
+  const el = inputEl.value;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+}
+
+watch(input, () => {
+  void nextTick(autoResizeInput);
+});
 
 // Delete dialog state
 const deleteDialogOpen = ref(false);
@@ -166,9 +185,13 @@ async function loadConversations() {
 }
 
 async function openConversation(id: string) {
-  if (running.value || generatingReport.value || id === activeId.value) return;
+  if (running.value || generatingReport.value || id === activeId.value) {
+    listOpen.value = false;
+    return;
+  }
   error.value = null;
   reportStatus.value = "";
+  listOpen.value = false;
   try {
     const res = await apiFetch(`${API_BASE}/chats/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -198,6 +221,7 @@ function startNewConversation() {
   error.value = null;
   statusLine.value = "";
   reportStatus.value = "";
+  listOpen.value = false;
 }
 
 function openDeleteDialog(id: string, ev?: Event) {
@@ -349,6 +373,10 @@ async function send() {
   error.value = null;
   statusLine.value = "";
   input.value = "";
+  void nextTick(() => {
+    autoResizeInput();
+    void scrollToBottom();
+  });
 
   messages.value = messages.value.filter((m) => m.id !== "welcome");
 
@@ -493,6 +521,18 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function onComposerFocus() {
+  void scrollToBottom();
+  window.setTimeout(() => {
+    syncViewport();
+    void scrollToBottom();
+  }, 50);
+  window.setTimeout(() => {
+    syncViewport();
+    void scrollToBottom();
+  }, 350);
+}
+
 function cancel() {
   abortController?.abort();
 }
@@ -514,7 +554,6 @@ onMounted(() => {
 
 <template>
   <PageShell flush no-scroll>
-    <!-- Delete Confirmation Dialog -->
     <DeleteConversationDialog
       v-if="conversationToDelete"
       v-model:open="deleteDialogOpen"
@@ -524,275 +563,328 @@ onMounted(() => {
       @cancel="cancelDelete"
     />
 
-    <div class="flex h-full overflow-hidden">
-    <aside
-      class="flex w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
-    >
-      <div class="border-b border-[var(--border)] p-3">
-        <button
-          type="button"
-          class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition hover:opacity-90 disabled:opacity-50"
-          :disabled="running || generatingReport"
-          @click="startNewConversation"
-        >
-          <Plus :size="16" />
-          Nouvelle conversation
-        </button>
-      </div>
+    <div
+      class="relative flex h-full min-h-0 overflow-hidden md:h-full"
+      :style="shellStyle"
+    >      <Transition
+        enter-active-class="transition-opacity duration-200"
+        leave-active-class="transition-opacity duration-150"
+        enter-from-class="opacity-0"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="listOpen"
+          class="absolute inset-0 z-30 bg-black/40 md:hidden"
+          @click="listOpen = false"
+        />
+      </Transition>
 
-      <div class="flex-1 overflow-y-auto p-2">
-        <p
-          v-if="listLoading"
-          class="px-2 py-4 text-center text-xs text-[var(--muted-foreground)]"
-        >
-          Chargement…
-        </p>
-        <p
-          v-else-if="!conversations.length"
-          class="px-2 py-6 text-center text-xs text-[var(--muted-foreground)]"
-        >
-          Aucune conversation sauvegardée
-        </p>
-        <button
-          v-for="c in conversations"
-          :key="c.id"
-          type="button"
-          class="group mb-1 flex w-full flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left transition"
-          :class="
-            activeId === c.id
-              ? 'bg-[var(--primary)]/12 text-[var(--foreground)]'
-              : 'hover:bg-[var(--accent)] text-[var(--foreground)]'
-          "
-          :disabled="running || generatingReport"
-          @click="openConversation(c.id)"
-        >
-          <div class="flex items-start gap-2">
-            <MessageSquare
-              :size="14"
-              class="mt-0.5 shrink-0 text-[var(--primary)]"
-            />
-            <span class="min-w-0 flex-1 truncate text-sm font-medium">{{
-              c.title
-            }}</span>
-            <Lock
-              v-if="c.report_id"
-              :size="12"
-              class="mt-0.5 shrink-0 text-[var(--muted-foreground)]"
-              title="Liée à un rapport"
-            />
-            <button
-              v-else
-              type="button"
-              class="shrink-0 rounded p-0.5 text-[var(--muted-foreground)] opacity-0 transition hover:text-red-600 group-hover:opacity-100"
-              title="Supprimer"
-              @click="openDeleteDialog(c.id, $event)"
-            >
-              <Trash2 :size="13" />
-            </button>
-          </div>
-          <p class="pl-5 text-[10px] text-[var(--muted-foreground)]">
-            {{ formatWhen(c.updated_at) }}
-            <template v-if="c.message_count">
-              · {{ c.message_count }} msg</template
-            >
-            <template v-if="c.report_id"> · rapport</template>
+      <aside
+        class="absolute inset-y-0 left-0 z-40 flex w-[min(18rem,88vw)] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)] transition-transform duration-200 md:static md:z-auto md:w-64 md:translate-x-0"
+        :class="listOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'"
+      >
+        <div class="flex items-center gap-2 border-b border-[var(--border)] p-3">
+          <button
+            type="button"
+            class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition hover:opacity-90 disabled:opacity-50"
+            :disabled="running || generatingReport"
+            @click="startNewConversation"
+          >
+            <Plus :size="16" />
+            Nouvelle
+          </button>
+          <button
+            type="button"
+            class="rounded-lg p-2 text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] md:hidden"
+            aria-label="Fermer la liste"
+            @click="listOpen = false"
+          >
+            <X :size="18" />
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto overscroll-contain p-2">
+          <p
+            v-if="listLoading"
+            class="px-2 py-4 text-center text-xs text-[var(--muted-foreground)]"
+          >
+            Chargement…
           </p>
-        </button>
-      </div>
-    </aside>
-
-    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div class="border-b border-[var(--border)] bg-[var(--card)] px-6 py-4">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h1
-              class="flex items-center gap-2 text-lg font-bold text-[var(--foreground)]"
-            >
-              <Sparkles :size="18" class="text-[var(--primary)]" />
-              <span class="truncate">{{ activeTitle }}</span>
-              <Lock
-                v-if="activeReportId"
+          <p
+            v-else-if="!conversations.length"
+            class="px-2 py-6 text-center text-xs text-[var(--muted-foreground)]"
+          >
+            Aucune conversation sauvegardée
+          </p>
+          <button
+            v-for="c in conversations"
+            :key="c.id"
+            type="button"
+            class="group mb-1 flex w-full flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left transition"
+            :class="
+              activeId === c.id
+                ? 'bg-[var(--primary)]/12 text-[var(--foreground)]'
+                : 'hover:bg-[var(--accent)] text-[var(--foreground)]'
+            "
+            :disabled="running || generatingReport"
+            @click="openConversation(c.id)"
+          >
+            <div class="flex items-start gap-2">
+              <MessageSquare
                 :size="14"
-                class="shrink-0 text-[var(--muted-foreground)]"
+                class="mt-0.5 shrink-0 text-[var(--primary)]"
+              />
+              <span class="min-w-0 flex-1 truncate text-sm font-medium">{{
+                c.title
+              }}</span>
+              <Lock
+                v-if="c.report_id"
+                :size="12"
+                class="mt-0.5 shrink-0 text-[var(--muted-foreground)]"
                 title="Liée à un rapport"
               />
-            </h1>
-            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
-              <template v-if="activeReportId">
-                Liée au rapport
-                <button
-                  type="button"
-                  class="font-medium text-[var(--primary)] hover:underline"
-                  @click="openLinkedReport"
-                >
-                  {{ activeReportId }}
-                </button>
-                · suppression désactivée
-              </template>
-              <template v-else>
-                Sauvegardé dans le vault · sync OVH à chaque message
-              </template>
-            </p>
-            <p v-if="reportStatus" class="mt-1 text-xs text-[var(--primary)]">
-              {{ reportStatus }}
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              v-if="activeReportId"
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--foreground)] transition hover:bg-[var(--accent)]"
-              @click="openLinkedReport"
-            >
-              <FileText :size="14" />
-              Voir le rapport
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/8 px-3 py-2 text-sm font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/15 disabled:opacity-40"
-              :disabled="!canGenerateReport"
-              :title="
-                !activeId
-                  ? 'Envoie d’abord un message'
-                  : activeReportId
-                    ? 'Écrase le .md existant'
-                    : 'Crée un rapport dans rapports/'
-              "
-              @click="generateReport"
-            >
-              <Loader v-if="generatingReport" :size="14" class="animate-spin" />
-              <RefreshCw v-else-if="activeReportId" :size="14" />
-              <FileText v-else :size="14" />
-              {{
-                activeReportId ? "Régénérer le rapport" : "Générer un rapport"
-              }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div ref="listEl" class="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div class="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4">
-          <div
-            v-for="m in messages"
-            :key="m.id"
-            class="flex min-w-0 gap-3"
-            :class="m.role === 'user' ? 'flex-row-reverse' : ''"
-          >
-            <div
-              class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1 ring-[var(--border)]"
-            >
-              <img
-                v-if="m.role === 'user' && !userPhotoFailed"
-                :src="photoUrl"
-                alt="Moi"
-                class="h-full w-full object-cover"
-                @error="userPhotoFailed = true"
-              />
-              <div
-                v-else-if="m.role === 'user'"
-                class="flex h-full w-full items-center justify-center bg-[var(--secondary)] text-[var(--secondary-foreground)]"
-              >
-                <UserRound :size="15" />
-              </div>
-              <img
+              <button
                 v-else
-                :src="logoIconUrl"
-                alt="Asclepios"
-                class="h-full w-full object-cover"
-              />
+                type="button"
+                class="shrink-0 rounded p-1 text-[var(--muted-foreground)] transition hover:text-red-600 md:opacity-0 md:group-hover:opacity-100"
+                title="Supprimer"
+                @click="openDeleteDialog(c.id, $event)"
+              >
+                <Trash2 :size="13" />
+              </button>
             </div>
-            <div class="min-w-0 max-w-[85%] flex flex-col gap-2">
-              <!-- Edit proposals (shown first) -->
-              <template v-if="m.role === 'assistant' && m.editProposals?.length">
-                <EditProposal
-                  v-for="(proposal, pIdx) in m.editProposals"
-                  :key="`${m.id}-edit-${pIdx}`"
-                  :proposal="proposal"
-                  :conversation-id="activeId || undefined"
-                  :message-id="m.id"
-                  :proposal-index="pIdx"
-                  @applied="() => void loadConversations()"
-                  @rejected="() => {}"
-                />
-              </template>
+            <p class="pl-5 text-[10px] text-[var(--muted-foreground)]">
+              {{ formatWhen(c.updated_at) }}
+              <template v-if="c.message_count">
+                · {{ c.message_count }} msg</template
+              >
+              <template v-if="c.report_id"> · rapport</template>
+            </p>
+          </button>
+        </div>
+      </aside>
 
-              <!-- Message content -->
-              <div
-                class="overflow-hidden rounded-2xl px-4 py-3 text-sm leading-relaxed"
-                :class="
-                  m.role === 'user'
-                    ? 'rounded-tr-md bg-[var(--primary)] text-[var(--primary-foreground)]'
-                    : 'rounded-tl-md border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]'
+      <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div
+          class="shrink-0 border-b border-[var(--border)] bg-[var(--card)] transition-[padding] px-3 sm:px-6"
+          :class="keyboardOpen ? 'py-2' : 'py-3 sm:py-4'"
+        >
+          <div class="flex items-center gap-2 sm:items-start sm:gap-3">
+            <button
+              type="button"
+              class="rounded-lg p-2 text-[var(--foreground)] transition hover:bg-[var(--accent)] md:hidden"
+              aria-label="Menu conversations"
+              @click="listOpen = true"
+            >
+              <EllipsisVertical :size="20" />
+            </button>
+            <div class="min-w-0 flex-1">
+              <h1
+                class="flex items-center gap-2 text-base font-bold text-[var(--foreground)] sm:text-lg"
+              >
+                <Sparkles
+                  :size="18"
+                  class="hidden shrink-0 text-[var(--primary)] sm:block"
+                />
+                <span class="truncate">{{ activeTitle }}</span>
+                <Lock
+                  v-if="activeReportId"
+                  :size="14"
+                  class="shrink-0 text-[var(--muted-foreground)]"
+                  title="Liée à un rapport"
+                />
+              </h1>
+              <p
+                v-if="!keyboardOpen"
+                class="mt-0.5 hidden text-xs text-[var(--muted-foreground)] sm:block"
+              >
+                <template v-if="activeReportId">
+                  Liée au rapport
+                  <button
+                    type="button"
+                    class="font-medium text-[var(--primary)] hover:underline"
+                    @click="openLinkedReport"
+                  >
+                    {{ activeReportId }}
+                  </button>
+                  · suppression désactivée
+                </template>
+                <template v-else>
+                  Sauvegardé dans le vault · sync OVH à chaque message
+                </template>
+              </p>
+              <p v-if="reportStatus && !keyboardOpen" class="mt-1 text-xs text-[var(--primary)]">
+                {{ reportStatus }}
+              </p>
+            </div>
+            <div
+              v-if="!keyboardOpen"
+              class="flex shrink-0 flex-col items-stretch gap-1.5 sm:flex-row sm:items-center sm:gap-2"
+            >
+              <button
+                v-if="activeReportId"
+                type="button"
+                class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 py-2 text-xs text-[var(--foreground)] transition hover:bg-[var(--accent)] sm:px-3 sm:text-sm"
+                @click="openLinkedReport"
+              >
+                <FileText :size="14" />
+                <span class="hidden sm:inline">Voir le rapport</span>
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/8 px-2.5 py-2 text-xs font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/15 disabled:opacity-40 sm:px-3 sm:text-sm"
+                :disabled="!canGenerateReport"
+                :title="
+                  !activeId
+                    ? 'Envoie d’abord un message'
+                    : activeReportId
+                      ? 'Écrase le .md existant'
+                      : 'Crée un rapport dans rapports/'
                 "
+                @click="generateReport"
               >
-                <div
-                  v-if="m.role === 'assistant' && m.content"
-                  class="prose prose-sm max-w-none overflow-x-auto prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
-                  v-html="renderMd(m.content)"
-                />
-                <p v-else-if="m.content" class="whitespace-pre-wrap">
-                  {{ m.content }}
-                </p>
-                <p
-                  v-else
-                  class="flex items-center gap-2 text-[var(--muted-foreground)]"
-                >
-                  <Loader :size="14" class="animate-spin" />
-                  {{ statusLine || "Réflexion…" }}
-                </p>
-              </div>
-
-              <!-- Horodatage -->
-              <span
-                v-if="messageTime(m.created_at)"
-                class="-mt-1 px-1 text-[11px] tabular-nums text-[var(--muted-foreground)]"
-                :class="m.role === 'user' ? 'self-end' : 'self-start'"
-                :title="messageDateTitle(m.created_at)"
-              >
-                {{ messageTime(m.created_at) }}
-              </span>
+                <Loader v-if="generatingReport" :size="14" class="animate-spin" />
+                <RefreshCw v-else-if="activeReportId" :size="14" />
+                <FileText v-else :size="14" />
+                <span>{{ activeReportId ? "Régénérer" : "Rapport" }}</span>
+              </button>
             </div>
           </div>
         </div>
-      </div>
 
-      <div
-        class="border-t border-[var(--border)] bg-[var(--card)] px-4 py-4 sm:px-6"
-      >
-        <div class="mx-auto max-w-3xl">
-          <p v-if="error" class="mb-2 text-xs text-red-600">{{ error }}</p>
-          <div
-            class="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-2 shadow-sm focus-within:border-[var(--primary)] focus-within:ring-2 focus-within:ring-[var(--primary)]/15"
-          >
-            <textarea
-              v-model="input"
-              rows="1"
-              placeholder="Pose une question sur ton dossier…"
-              class="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-[var(--muted-foreground)]"
-              :disabled="running || generatingReport"
-              @keydown="onKeydown"
-            />
-            <button
-              v-if="running"
-              type="button"
-              class="mb-1 mr-1 inline-flex h-10 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700"
-              @click="cancel"
+        <div
+          ref="listEl"
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-6"
+        >
+          <div class="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-3 sm:gap-4">
+            <div
+              v-for="m in messages"
+              :key="m.id"
+              class="flex min-w-0 gap-2 sm:gap-3"
+              :class="m.role === 'user' ? 'flex-row-reverse' : ''"
             >
-              Stop
-            </button>
-            <button
-              v-else
-              type="button"
-              class="mb-1 mr-1 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] transition hover:opacity-90 disabled:opacity-40"
-              :disabled="!canSend"
-              @click="send"
-            >
-              <Send :size="16" />
-            </button>
+              <div
+                class="mt-0.5 h-7 w-7 shrink-0 overflow-hidden rounded-full ring-1 ring-[var(--border)] sm:h-8 sm:w-8"
+              >
+                <img
+                  v-if="m.role === 'user' && !userPhotoFailed"
+                  :src="photoUrl"
+                  alt="Moi"
+                  class="h-full w-full object-cover"
+                  @error="userPhotoFailed = true"
+                />
+                <div
+                  v-else-if="m.role === 'user'"
+                  class="flex h-full w-full items-center justify-center bg-[var(--secondary)] text-[var(--secondary-foreground)]"
+                >
+                  <UserRound :size="15" />
+                </div>
+                <img
+                  v-else
+                  :src="logoIconUrl"
+                  alt="Asclepios"
+                  class="h-full w-full object-cover"
+                />
+              </div>
+              <div class="flex min-w-0 max-w-[88%] flex-col gap-2 sm:max-w-[85%]">
+                <template v-if="m.role === 'assistant' && m.editProposals?.length">
+                  <EditProposal
+                    v-for="(proposal, pIdx) in m.editProposals"
+                    :key="`${m.id}-edit-${pIdx}`"
+                    :proposal="proposal"
+                    :conversation-id="activeId || undefined"
+                    :message-id="m.id"
+                    :proposal-index="pIdx"
+                    @applied="() => void loadConversations()"
+                    @rejected="() => {}"
+                  />
+                </template>
+
+                <div
+                  class="overflow-hidden rounded-2xl px-3 py-2.5 text-sm leading-relaxed sm:px-4 sm:py-3"
+                  :class="
+                    m.role === 'user'
+                      ? 'rounded-tr-md bg-[var(--primary)] text-[var(--primary-foreground)]'
+                      : 'rounded-tl-md border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]'
+                  "
+                >
+                  <div
+                    v-if="m.role === 'assistant' && m.content"
+                    class="prose prose-sm max-w-none overflow-x-auto break-words prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
+                    v-html="renderMd(m.content)"
+                  />
+                  <p v-else-if="m.content" class="whitespace-pre-wrap break-words">
+                    {{ m.content }}
+                  </p>
+                  <p
+                    v-else
+                    class="flex items-center gap-2 text-[var(--muted-foreground)]"
+                  >
+                    <Loader :size="14" class="animate-spin" />
+                    {{ statusLine || "Réflexion…" }}
+                  </p>
+                </div>
+
+                <span
+                  v-if="messageTime(m.created_at)"
+                  class="-mt-1 px-1 text-[11px] tabular-nums text-[var(--muted-foreground)]"
+                  :class="m.role === 'user' ? 'self-end' : 'self-start'"
+                  :title="messageDateTitle(m.created_at)"
+                >
+                  {{ messageTime(m.created_at) }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+
+        <div
+          class="shrink-0 border-t border-[var(--border)] bg-[var(--card)] px-3 pt-2 sm:px-6 sm:py-4"
+          :class="
+            keyboardOpen
+              ? 'pb-2'
+              : 'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+          "
+        >
+          <div class="mx-auto max-w-3xl">
+            <p v-if="error" class="mb-2 text-xs text-red-600">{{ error }}</p>
+            <div
+              class="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-1.5 shadow-sm focus-within:border-[var(--primary)] focus-within:ring-2 focus-within:ring-[var(--primary)]/15 sm:p-2"
+            >
+              <textarea
+                ref="inputEl"
+                v-model="input"
+                rows="1"
+                enterkeyhint="send"
+                autocomplete="off"
+                autocorrect="on"
+                placeholder="Écrire un message…"
+                class="max-h-32 min-h-[44px] flex-1 resize-none bg-transparent px-2 py-2.5 text-base leading-5 outline-none placeholder:text-[var(--muted-foreground)] sm:max-h-40 sm:px-3 sm:text-sm"
+                :disabled="running || generatingReport"
+                @keydown="onKeydown"
+                @focus="onComposerFocus"
+                @input="autoResizeInput"
+              />
+              <button
+                v-if="running"
+                type="button"
+                class="mb-0.5 inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700"
+                @click="cancel"
+              >
+                Stop
+              </button>
+              <button
+                v-else
+                type="button"
+                class="mb-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] transition hover:opacity-90 disabled:opacity-40"
+                :disabled="!canSend"
+                @click="send"
+              >
+                <Send :size="18" />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </PageShell>
