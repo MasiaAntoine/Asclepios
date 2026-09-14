@@ -23,7 +23,7 @@ export default defineConfig({
       manifest: {
         name: 'Asclepios',
         short_name: 'Asclepios',
-        description: 'Compagnon de suivi médical personnel',
+        description: 'Asclepios',
         lang: 'fr',
         dir: 'ltr',
         start_url: '/',
@@ -32,7 +32,7 @@ export default defineConfig({
         orientation: 'portrait-primary',
         background_color: '#F4FBF8',
         theme_color: '#1A7A60',
-        categories: ['health', 'medical', 'lifestyle'],
+        categories: ['lifestyle'],
         icons: [
           {
             src: 'pwa-192x192.png',
