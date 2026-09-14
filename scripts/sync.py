@@ -57,7 +57,8 @@ CANONICAL_DIRS = (
 
 
 def load_config() -> dict:
-    load_dotenv(ROOT / ".env")
+    env_file = os.getenv("ASCLEPIOS_ENV_FILE", ".env").strip() or ".env"
+    load_dotenv(ROOT / env_file)
     required = [
         "OVH_ACCESS_KEY",
         "OVH_SECRET_KEY",
@@ -68,7 +69,7 @@ def load_config() -> dict:
     ]
     missing = [k for k in required if not os.getenv(k)]
     if missing:
-        sys.exit(f"Variables manquantes dans .env : {', '.join(missing)}")
+        sys.exit(f"Variables manquantes dans {env_file} : {', '.join(missing)}")
 
     data_dir = ROOT / os.getenv("LOCAL_DATA_DIR", "vault")
     return {

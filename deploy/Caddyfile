@@ -1,0 +1,15 @@
+asclepios.masia-antoine.fr {
+	encode gzip
+
+	handle /api* {
+		reverse_proxy api:8001
+	}
+
+	handle /vault* {
+		reverse_proxy api:8001
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

@@ -3,9 +3,9 @@ app/dist
 app/.vite
 **/.DS_Store
 **/*.log
-brand/
-scripts/
 requirements.txt
 # Never send clinical data into the Docker build context
 data/
 vault/
+.env
+# .env.prod is mounted at runtime, not baked into the image
