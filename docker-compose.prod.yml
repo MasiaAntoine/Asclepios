@@ -1,0 +1,54 @@
+# Production — Asclepios (VPS)
+# Usage : docker compose -f docker-compose.prod.yml up -d --build
+#
+# Expose uniquement 80/443 via Caddy. API et web restent internes.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile.prod
+    volumes:
+      - ./vault:/workspace/vault
+      - ./.env.prod:/workspace/.env.prod:ro
+      - ./brand:/workspace/brand:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Europe/Paris
+      - ASCLEPIOS_ENV_FILE=.env.prod
+    restart: unless-stopped
+    networks:
+      - asclepios
+
+  web:
+    build:
+      context: .
+      dockerfile: app/Dockerfile.prod
+    restart: unless-stopped
+    networks:
+      - asclepios
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+    networks:
+      - asclepios
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  asclepios:
+    driver: bridge
