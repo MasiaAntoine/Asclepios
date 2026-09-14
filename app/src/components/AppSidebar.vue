@@ -115,9 +115,9 @@ async function onLogout() {
 </script>
 
 <template>
-  <!-- Barre mobile (PWA / téléphone) -->
+  <!-- Barre mobile (PWA / téléphone) — hauteur = 3.5rem + safe-area (pas de double comptage) -->
   <header
-    class="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-3 pt-[env(safe-area-inset-top)] md:hidden"
+    class="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-3 pt-[env(safe-area-inset-top)] md:hidden"
   >
     <button
       type="button"
