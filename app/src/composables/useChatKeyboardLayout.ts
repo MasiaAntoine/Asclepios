@@ -1,11 +1,11 @@
 import { onMounted, onUnmounted, ref, type CSSProperties, type Ref } from 'vue'
 
 /**
- * Ancre le layout chat dans le visualViewport (clavier mobile iOS/Android)
- * pour éviter le décalage / le contenu caché derrière le clavier.
+ * Remonte la zone chat au-dessus du clavier mobile via padding-bottom
+ * (sans transform / hauteur viewport qui déborde sous l’écran).
  */
 export function useChatKeyboardLayout(scrollEl: Ref<HTMLElement | null>) {
-  const shellStyle = ref<CSSProperties>({})
+  const shellStyle = ref<CSSProperties>({ height: '100%' })
   const keyboardOpen = ref(false)
   let raf = 0
 
@@ -13,30 +13,28 @@ export function useChatKeyboardLayout(scrollEl: Ref<HTMLElement | null>) {
     cancelAnimationFrame(raf)
     raf = requestAnimationFrame(() => {
       const vv = window.visualViewport
-      if (!vv) {
-        shellStyle.value = { height: '100%' }
-        keyboardOpen.value = false
-        return
-      }
-
-      // Mobile / tablette étroite uniquement
       const isCompact = window.matchMedia('(max-width: 767px)').matches
-      if (!isCompact) {
-        shellStyle.value = { height: '100%', transform: 'none' }
+
+      if (!vv || !isCompact) {
+        shellStyle.value = { height: '100%', paddingBottom: '0px' }
         keyboardOpen.value = false
         return
       }
 
+      // Espace couvert par le clavier (bas de l’écran layout vs visualViewport)
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
-      keyboardOpen.value = inset > 80
+      const open = inset > 60
+      keyboardOpen.value = open
 
       shellStyle.value = {
-        height: `${Math.round(vv.height)}px`,
-        transform: `translateY(${Math.round(vv.offsetTop)}px)`,
+        height: '100%',
+        // Remonte le composer au-dessus du clavier ; le parent (main) garde déjà le header app
+        paddingBottom: open ? `${Math.round(inset)}px` : '0px',
+        boxSizing: 'border-box',
         transition: 'none',
       }
 
-      if (keyboardOpen.value && scrollEl.value) {
+      if (open && scrollEl.value) {
         scrollEl.value.scrollTop = scrollEl.value.scrollHeight
       }
     })
@@ -47,14 +45,14 @@ export function useChatKeyboardLayout(scrollEl: Ref<HTMLElement | null>) {
     if (!(target instanceof HTMLTextAreaElement) && !(target instanceof HTMLInputElement)) {
       return
     }
-    // Laisser le clavier s’ouvrir puis resync + scroll
     window.setTimeout(() => {
       sync()
-      if (scrollEl.value) {
-        scrollEl.value.scrollTop = scrollEl.value.scrollHeight
-      }
+      if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
     }, 50)
-    window.setTimeout(sync, 300)
+    window.setTimeout(() => {
+      sync()
+      if (scrollEl.value) scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+    }, 350)
   }
 
   onMounted(() => {

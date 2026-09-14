@@ -839,11 +839,16 @@ onMounted(() => {
         </div>
 
         <div
-          class="shrink-0 border-t border-[var(--border)] bg-[var(--card)] px-3 pt-2 sm:px-6 sm:py-4"
+          class="shrink-0 border-t border-[var(--border)] bg-[var(--card)] px-3 pt-2 sm:px-6 sm:pt-4"
+          :style="
+            keyboardOpen
+              ? { paddingBottom: '0.5rem' }
+              : undefined
+          "
           :class="
             keyboardOpen
-              ? 'pb-2'
-              : 'pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+              ? ''
+              : 'pb-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.5rem))] sm:pb-4'
           "
         >
           <div class="mx-auto max-w-3xl">
