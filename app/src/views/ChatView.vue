@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { marked } from "marked";
 import {
   EllipsisVertical,
@@ -20,9 +20,15 @@ import logoIconUrl from "@/assets/logo-icon.png";
 import { useProfile } from "@/composables/useProfile";
 import { useChatKeyboardLayout } from "@/composables/useChatKeyboardLayout";
 import PageShell from "@/components/PageShell.vue";
+import ChatThinkingDots from "@/components/ChatThinkingDots.vue";
+import BottomSheet from "@/components/ui/BottomSheet.vue";
+import AiForgeOverlay from "@/components/AiForgeOverlay.vue";
+import ReportDetailView from "@/views/ReportDetailView.vue";
+import { useMobileSheet } from "@/composables/useMobileSheet";
 import EditProposal from "@/components/EditProposal.vue";
 import DeleteConversationDialog from "@/components/DeleteConversationDialog.vue";
 import { apiFetch } from '@/lib/apiFetch'
+import { useReports } from '@/composables/useReports'
 
 interface EditProposalData {
   path: string;
@@ -58,7 +64,10 @@ const WELCOME =
   "Salut — je suis **ton allié Asclepios**. Je connais ton dossier médical, et je suis là pour t’accompagner.\n\nPose-moi ce que tu veux, par exemple :\n- *Comment a évolué mon poids ?*\n- *Résume ma posologie actuelle*\n- *Prépare un brief pour mon prochain RDV*";
 
 const router = useRouter();
+const route = useRoute();
 const { photoUrl } = useProfile();
+const { reload: reloadReports } = useReports();
+const { itemId: reportSheetId, sheetOpen: reportSheetOpen, openItem: openReportSheet } = useMobileSheet();
 const userPhotoFailed = ref(false);
 
 const conversations = ref<ConversationMeta[]>([]);
@@ -160,12 +169,72 @@ async function scrollToBottom() {
   if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight;
 }
 
-watch(
-  () => messages.value.map((m) => m.content).join("\0"),
-  () => {
-    void scrollToBottom();
-  },
+const streamingId = ref<string | null>(null);
+const revealed = ref("");
+const revealTarget = ref("");
+const freshIds = ref<Set<string>>(new Set());
+let revealTimer: ReturnType<typeof setTimeout> | null = null;
+
+const showCaret = computed(
+  () =>
+    streamingId.value != null &&
+    revealed.value.length > 0 &&
+    revealed.value.length < revealTarget.value.length,
 );
+
+function stopReveal() {
+  if (revealTimer != null) {
+    clearTimeout(revealTimer);
+    revealTimer = null;
+  }
+}
+
+function flushReveal() {
+  stopReveal();
+  revealed.value = revealTarget.value;
+}
+
+function stepReveal() {
+  revealTimer = null;
+  if (revealed.value.length >= revealTarget.value.length) {
+    if (!running.value) streamingId.value = null;
+    return;
+  }
+  const rest = revealTarget.value.slice(revealed.value.length);
+  const take = rest.match(/^\s*\S+/);
+  const chunk = take ? take[0] : rest.slice(0, 1);
+  revealed.value += chunk;
+  if (revealed.value.length >= revealTarget.value.length) {
+    if (!running.value) streamingId.value = null;
+    return;
+  }
+  // Un peu plus rapide que la lecture à voix haute, encore lisible mot à mot.
+  const letters = chunk.trim().length;
+  const delay = Math.min(90, Math.max(36, 32 + letters * 4));
+  revealTimer = window.setTimeout(stepReveal, delay);
+}
+
+function queueReveal(full: string) {
+  revealTarget.value = full;
+  if (revealTimer == null && revealed.value.length < revealTarget.value.length) {
+    stepReveal();
+  }
+}
+
+function bubbleText(m: ChatMsg) {
+  if (m.id === streamingId.value) return revealed.value;
+  return m.content;
+}
+
+function markFresh(id: string) {
+  const next = new Set(freshIds.value);
+  next.add(id);
+  freshIds.value = next;
+}
+
+onUnmounted(() => {
+  stopReveal();
+});
 
 async function loadConversations() {
   listLoading.value = true;
@@ -184,14 +253,39 @@ async function loadConversations() {
   }
 }
 
+function routeChatId(): string | undefined {
+  const id = route.params.id;
+  return typeof id === "string" && id.length ? id : undefined;
+}
+
+function resetConversationState() {
+  stopReveal();
+  streamingId.value = null;
+  revealed.value = "";
+  revealTarget.value = "";
+  freshIds.value = new Set();
+  activeId.value = null;
+  activeReportId.value = null;
+  messages.value = [{ id: "welcome", role: "assistant", content: WELCOME }];
+  error.value = null;
+  statusLine.value = "";
+  reportStatus.value = "";
+  listOpen.value = false;
+}
+
 async function openConversation(id: string) {
-  if (running.value || generatingReport.value || id === activeId.value) {
+  if (running.value || generatingReport.value) {
     listOpen.value = false;
     return;
   }
   error.value = null;
   reportStatus.value = "";
   listOpen.value = false;
+  stopReveal();
+  streamingId.value = null;
+  revealed.value = "";
+  revealTarget.value = "";
+  freshIds.value = new Set();
   try {
     const res = await apiFetch(`${API_BASE}/chats/${id}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -208,20 +302,26 @@ async function openConversation(id: string) {
     messages.value = msgs.length
       ? msgs
       : [{ id: "welcome", role: "assistant", content: WELCOME }];
+    void scrollToBottom();
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Chargement impossible";
   }
 }
 
+function selectConversation(id: string) {
+  listOpen.value = false;
+  if (routeChatId() === id) return;
+  void router.push({ name: "chat", params: { id } });
+}
+
 function startNewConversation() {
   if (running.value || generatingReport.value) return;
-  activeId.value = null;
-  activeReportId.value = null;
-  messages.value = [{ id: "welcome", role: "assistant", content: WELCOME }];
-  error.value = null;
-  statusLine.value = "";
-  reportStatus.value = "";
   listOpen.value = false;
+  if (!routeChatId()) {
+    resetConversationState();
+    return;
+  }
+  void router.push("/assistant");
 }
 
 function openDeleteDialog(id: string, ev?: Event) {
@@ -343,6 +443,7 @@ async function generateReport() {
           activeReportId.value = rid;
           if (activeId.value)
             upsertConversationMeta(activeId.value, undefined, rid);
+          void reloadReports();
           continue;
         }
         if (line.startsWith("Erreur")) {
@@ -360,10 +461,10 @@ async function generateReport() {
   }
 }
 
-function openLinkedReport() {
-  if (activeReportId.value) {
-    void router.push(`/rapports/${activeReportId.value}`);
-  }
+async function openLinkedReport() {
+  if (!activeReportId.value) return
+  await reloadReports()
+  openReportSheet(activeReportId.value, `/rapports/${activeReportId.value}`)
 }
 
 async function send() {
@@ -387,6 +488,7 @@ async function send() {
     created_at: new Date().toISOString(),
   };
   messages.value.push(userMsg);
+  markFresh(userMsg.id);
 
   const assistantId = `a-${Date.now()}`;
   // `created_at` est posé à la fin du stream, comme côté serveur : l'heure
@@ -397,6 +499,12 @@ async function send() {
     content: "",
     editProposals: [],
   });
+  markFresh(assistantId);
+  stopReveal();
+  streamingId.value = assistantId;
+  revealed.value = "";
+  revealTarget.value = "";
+  void scrollToBottom();
 
   running.value = true;
   abortController = new AbortController();
@@ -437,6 +545,9 @@ async function send() {
           const id = line.slice("CONVERSATION:".length);
           activeId.value = id;
           upsertConversationMeta(id);
+          if (routeChatId() !== id) {
+            void router.replace({ name: "chat", params: { id } });
+          }
           continue;
         }
         if (line.startsWith("REPORT:")) {
@@ -483,6 +594,7 @@ async function send() {
           answer += line.replace(/\\n/g, "\n");
           const msg = messages.value.find((m) => m.id === assistantId);
           if (msg) msg.content = answer;
+          queueReveal(answer);
         } else if (line.startsWith("Erreur")) {
           error.value = line;
         } else if (line.trim()) {
@@ -511,6 +623,16 @@ async function send() {
     running.value = false;
     abortController = null;
     statusLine.value = "";
+    const done = messages.value.find((m) => m.id === assistantId);
+    if (done?.content) {
+      queueReveal(done.content);
+      if (revealed.value.length >= revealTarget.value.length) {
+        streamingId.value = null;
+      }
+    } else {
+      flushReveal();
+      streamingId.value = null;
+    }
   }
 }
 
@@ -547,8 +669,22 @@ function formatWhen(iso: string | null) {
   }
 }
 
+watch(
+  () => routeChatId(),
+  (id) => {
+    if (!id) {
+      if (activeId.value) resetConversationState();
+      return;
+    }
+    if (id === activeId.value) return;
+    void openConversation(id);
+  },
+);
+
 onMounted(() => {
   void loadConversations();
+  const id = routeChatId();
+  if (id) void openConversation(id);
 });
 </script>
 
@@ -627,7 +763,7 @@ onMounted(() => {
                 : 'hover:bg-[var(--accent)] text-[var(--foreground)]'
             "
             :disabled="running || generatingReport"
-            @click="openConversation(c.id)"
+            @click="selectConversation(c.id)"
           >
             <div class="flex items-start gap-2">
               <MessageSquare
@@ -761,10 +897,22 @@ onMounted(() => {
               v-for="m in messages"
               :key="m.id"
               class="flex min-w-0 gap-2 sm:gap-3"
-              :class="m.role === 'user' ? 'flex-row-reverse' : ''"
+              :class="[
+                m.role === 'user' ? 'flex-row-reverse' : '',
+                freshIds.has(m.id)
+                  ? m.role === 'user'
+                    ? 'chat-row-in-user'
+                    : 'chat-row-in-ai'
+                  : '',
+              ]"
             >
               <div
                 class="mt-0.5 h-7 w-7 shrink-0 overflow-hidden rounded-full ring-1 ring-[var(--border)] sm:h-8 sm:w-8"
+                :class="
+                  m.role === 'assistant' && streamingId === m.id && !bubbleText(m)
+                    ? 'chat-avatar-think'
+                    : ''
+                "
               >
                 <img
                   v-if="m.role === 'user' && !userPhotoFailed"
@@ -809,20 +957,23 @@ onMounted(() => {
                   "
                 >
                   <div
-                    v-if="m.role === 'assistant' && m.content"
+                    v-if="m.role === 'assistant' && bubbleText(m)"
                     class="prose prose-sm max-w-none overflow-x-auto break-words prose-p:my-2 prose-ul:my-2 prose-li:my-0.5"
-                    v-html="renderMd(m.content)"
-                  />
+                  >
+                    <div v-html="renderMd(bubbleText(m))" />
+                    <span
+                      v-if="showCaret && streamingId === m.id"
+                      class="chat-caret"
+                      aria-hidden="true"
+                    />
+                  </div>
                   <p v-else-if="m.content" class="whitespace-pre-wrap break-words">
                     {{ m.content }}
                   </p>
-                  <p
+                  <ChatThinkingDots
                     v-else
-                    class="flex items-center gap-2 text-[var(--muted-foreground)]"
-                  >
-                    <Loader :size="14" class="animate-spin" />
-                    {{ statusLine || "Réflexion…" }}
-                  </p>
+                    :status="statusLine"
+                  />
                 </div>
 
                 <span
@@ -845,11 +996,7 @@ onMounted(() => {
               ? { paddingBottom: '0.5rem' }
               : undefined
           "
-          :class="
-            keyboardOpen
-              ? ''
-              : 'pb-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.5rem))] sm:pb-4'
-          "
+          :class="keyboardOpen ? '' : 'pb-3 sm:pb-4'"
         >
           <div class="mx-auto max-w-3xl">
             <p v-if="error" class="mb-2 text-xs text-red-600">{{ error }}</p>
@@ -870,27 +1017,115 @@ onMounted(() => {
                 @focus="onComposerFocus"
                 @input="autoResizeInput"
               />
-              <button
-                v-if="running"
-                type="button"
-                class="mb-0.5 inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700"
-                @click="cancel"
-              >
-                Stop
-              </button>
-              <button
-                v-else
-                type="button"
-                class="mb-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] transition hover:opacity-90 disabled:opacity-40"
-                :disabled="!canSend"
-                @click="send"
-              >
-                <Send :size="18" />
-              </button>
+              <Transition name="chat-send" mode="out-in">
+                <button
+                  v-if="running"
+                  key="stop"
+                  type="button"
+                  class="mb-0.5 inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700"
+                  @click="cancel"
+                >
+                  Stop
+                </button>
+                <button
+                  v-else
+                  key="send"
+                  type="button"
+                  class="mb-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] transition duration-200 hover:opacity-90 active:scale-90 disabled:opacity-40"
+                  :disabled="!canSend"
+                  @click="send"
+                >
+                  <Send :size="18" />
+                </button>
+              </Transition>
             </div>
           </div>
         </div>
       </div>
     </div>
   </PageShell>
+
+  <BottomSheet v-model:open="reportSheetOpen">
+    <ReportDetailView v-if="reportSheetId" embedded :item-id="reportSheetId" />
+  </BottomSheet>
+
+  <AiForgeOverlay :open="generatingReport" :status="reportStatus" />
 </template>
+
+<style scoped>
+.chat-row-in-user {
+  animation: chat-in-user 0.32s ease-out;
+}
+
+.chat-row-in-ai {
+  animation: chat-in-ai 0.38s ease-out;
+}
+
+@keyframes chat-in-user {
+  from {
+    opacity: 0;
+    transform: translateY(10px) translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes chat-in-ai {
+  from {
+    opacity: 0;
+    transform: translateY(10px) translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.chat-avatar-think {
+  animation: chat-avatar-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes chat-avatar-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in oklch, var(--primary) 0%, transparent);
+  }
+}
+
+.chat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.9em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--primary);
+  animation: chat-caret 0.9s steps(1) infinite;
+}
+
+@keyframes chat-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.chat-send-enter-active,
+.chat-send-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.chat-send-enter-from,
+.chat-send-leave-to {
+  opacity: 0;
+  transform: scale(0.88);
+}
+</style>

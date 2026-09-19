@@ -78,10 +78,10 @@ function scrollBottom() {
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm"
       @click.self="closeDialog"
     >
-      <div class="relative w-full max-w-md rounded-2xl bg-[var(--card)] shadow-2xl ring-1 ring-[var(--border)]">
+      <div class="relative max-h-[100dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-[var(--card)] pb-[env(safe-area-inset-bottom)] shadow-2xl ring-1 ring-[var(--border)] sm:max-h-[90vh] sm:rounded-2xl sm:pb-0">
         <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
           <div>
             <h2 class="text-base font-semibold text-[var(--foreground)]">Nouvelle mesure de poids</h2>
@@ -97,7 +97,7 @@ function scrollBottom() {
         </div>
 
         <div class="space-y-4 px-6 py-5">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Date *</label>
               <input

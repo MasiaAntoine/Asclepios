@@ -164,10 +164,10 @@ defineExpose({ openDialog })
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm"
       @click.self="closeDialog"
     >
-      <div class="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-[var(--card)] shadow-2xl ring-1 ring-[var(--border)]">
+      <div class="relative max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--card)] pb-[env(safe-area-inset-bottom)] shadow-2xl ring-1 ring-[var(--border)] sm:max-h-[90vh] sm:rounded-2xl sm:pb-0">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-6 py-4">
           <div>
             <h2 class="text-base font-semibold text-[var(--foreground)]">
@@ -185,7 +185,7 @@ defineExpose({ openDialog })
         </div>
 
         <div class="space-y-4 px-6 py-5">
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Titre</label>
               <input v-model="titre" type="text" :class="inputClass" />
@@ -200,7 +200,7 @@ defineExpose({ openDialog })
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Spécialité *</label>
               <input v-model="specialite" type="text" :class="inputClass" />
@@ -211,7 +211,7 @@ defineExpose({ openDialog })
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Téléphone</label>
               <input v-model="telephone" type="text" :class="inputClass" />
@@ -225,7 +225,7 @@ defineExpose({ openDialog })
           <div>
             <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Adresse</label>
             <input v-model="voie" type="text" placeholder="Voie" class="mb-2" :class="inputClass" />
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <input v-model="codePostal" type="text" placeholder="CP" :class="inputClass" />
               <input v-model="ville" type="text" placeholder="Ville" class="col-span-2" :class="inputClass" />
             </div>

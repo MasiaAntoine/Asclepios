@@ -94,7 +94,7 @@ const router = createRouter({
       component: () => import('@/views/AgendaView.vue'),
     },
     {
-      path: '/assistant',
+      path: '/assistant/:id?',
       name: 'chat',
       component: () => import('@/views/ChatView.vue'),
     },

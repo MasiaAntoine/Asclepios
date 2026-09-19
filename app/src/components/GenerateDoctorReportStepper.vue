@@ -13,6 +13,7 @@ import StepperDrawer, { type StepperStep } from '@/components/StepperDrawer.vue'
 import { useDoctors, doctorFullName, doctorPhotoUrl, type Doctor } from '@/composables/useDoctors'
 import { parseEventDate, formatTime, type AgendaEvent } from '@/composables/useAgenda'
 import { apiFetch } from '@/lib/apiFetch'
+import { useReports } from '@/composables/useReports'
 
 const props = defineProps<{
   initialDoctorId?: string | null
@@ -20,6 +21,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   generated: [reportId: string]
+  view: [reportId: string]
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -33,6 +35,7 @@ const steps: StepperStep[] = [
 
 const router = useRouter()
 const { doctors } = useDoctors()
+const { reload: reloadReports } = useReports()
 
 const step = ref(0)
 const doctorId = ref('')
@@ -201,6 +204,7 @@ async function generate() {
         if (line.startsWith('GENERATED:')) {
           generatedId.value = line.slice('GENERATED:'.length).trim()
           emit('generated', generatedId.value)
+          void reloadReports()
         } else if (line === '[DONE]') {
           running.value = false
         } else if (line === '[ERROR]') {
@@ -222,7 +226,13 @@ async function generate() {
 function openReport() {
   if (!generatedId.value) return
   open.value = false
-  router.push(`/rapports/${generatedId.value}`)
+  void reloadReports().then(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      emit('view', generatedId.value!)
+      return
+    }
+    router.push(`/rapports/${generatedId.value}`)
+  })
 }
 
 function initials(doctor: Doctor) {

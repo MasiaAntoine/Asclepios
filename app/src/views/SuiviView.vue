@@ -50,7 +50,16 @@ const router = useRouter()
 
 const activeTab = ref<Tab>((route.query.tab as Tab) === 'rx' ? 'rx' : 'labs')
 
+watch(
+  () => route.query.tab,
+  (tab) => {
+    const next: Tab = tab === 'rx' ? 'rx' : 'labs'
+    if (activeTab.value !== next) activeTab.value = next
+  },
+)
+
 watch(activeTab, (tab) => {
+  if (route.query.tab === tab) return
   void router.replace({ query: { ...route.query, tab } })
 })
 
@@ -415,60 +424,6 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
 
 <template>
   <PageShell max-width="lg">
-    <template #header>
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <!-- Tabs -->
-        <div class="flex items-center gap-1 rounded-xl bg-[var(--muted)] p-1">
-          <button
-            v-for="tab in ([{ id: 'labs', label: labsConfig.title }, { id: 'rx', label: medConfig.title }] as const)"
-            :key="tab.id"
-            @click="activeTab = tab.id"
-            :class="[
-              'rounded-lg px-5 py-2 text-sm font-medium transition-all',
-              activeTab === tab.id
-                ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm'
-                : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
-            ]"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
-
-        <!-- Actions -->
-        <div class="flex flex-wrap items-center gap-2">
-          <PdfButton
-            v-if="activeTab === 'labs'"
-            :download-endpoint="labsPdfEndpoint"
-            label="Télécharger le PDF"
-          />
-          <PdfButton
-            v-else
-            :download-endpoint="traitementsPdfEndpoint"
-            label="Télécharger le PDF"
-          />
-          <AddSuiviEntryDialog
-            v-if="activeTab === 'labs'"
-            type="labs"
-            :csv="labsConfig.csv"
-            :primary-analyte="labsConfig.primaryAnalyte"
-            :marker-unit="labsConfig.markerUnit"
-            :ref-low="labsConfig.refLow"
-            :ref-high="labsConfig.refHigh"
-            :titre="labsConfig.title"
-            @added="onLabsEntryAdded"
-          />
-          <AddSuiviEntryDialog
-            v-else-if="activeTab === 'rx'"
-            type="rx"
-            :treatment-name-includes="medConfig.treatmentNameIncludes"
-            :dose-unit="medConfig.doseUnit"
-            :titre="medConfig.title"
-            @added="onRxEntryAdded"
-          />
-        </div>
-      </div>
-    </template>
-
     <div class="space-y-6">
 
         <!-- ════ LABS tab ════ -->
@@ -481,16 +436,46 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
           </div>
 
           <template v-else>
-            <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
-              <DateRangeFilter
-                :preset="labsPreset"
-                :custom-from="labsFrom"
-                :custom-to="labsTo"
-                @update:preset="labsPreset = $event"
-                @update:custom-from="labsFrom = $event"
-                @update:custom-to="labsTo = $event"
-                @select="labsSetPreset"
-              />
+            <div
+              class="-mx-4 -mt-4 overflow-hidden border-y border-[var(--border)] bg-[var(--card)] sm:-mx-6 sm:-mt-6 md:mx-0 md:mt-0 md:rounded-2xl md:border"
+            >
+              <div class="flex flex-col gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+                <DateRangeFilter
+                  :preset="labsPreset"
+                  :custom-from="labsFrom"
+                  :custom-to="labsTo"
+                  @update:preset="labsPreset = $event"
+                  @update:custom-from="labsFrom = $event"
+                  @update:custom-to="labsTo = $event"
+                  @select="labsSetPreset"
+                />
+                <div class="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <AddSuiviEntryDialog
+                    type="labs"
+                    :csv="labsConfig.csv"
+                    :primary-analyte="labsConfig.primaryAnalyte"
+                    :marker-unit="labsConfig.markerUnit"
+                    :ref-low="labsConfig.refLow"
+                    :ref-high="labsConfig.refHigh"
+                    :titre="labsConfig.title"
+                    @added="onLabsEntryAdded"
+                  />
+                  <PdfButton
+                    :download-endpoint="labsPdfEndpoint"
+                    label="Télécharger le PDF"
+                  />
+                </div>
+              </div>
+              <div class="px-1 py-3 sm:px-5 sm:py-5">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-0">
+                  <h2 class="text-sm font-semibold text-[var(--foreground)]">Évolution</h2>
+                  <p class="text-xs text-[var(--muted-foreground)]">Bande de référence · points rouges = hors norme labo</p>
+                </div>
+                <div v-if="filteredPrimary.length || labsDosePoints.length" class="h-56 w-full sm:h-80 lg:h-96">
+                  <Line :data="labsChartData" :options="labsChartOptions" />
+                </div>
+                <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">Aucune donnée sur cette période</p>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -532,24 +517,27 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
               </div>
             </div>
 
-            <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-              <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 class="text-sm font-semibold text-[var(--foreground)]">Évolution</h2>
-                <p class="text-xs text-[var(--muted-foreground)]">Bande de référence · points rouges = hors norme labo</p>
-              </div>
-              <div v-if="filteredPrimary.length || labsDosePoints.length" class="h-96 w-full">
-                <Line :data="labsChartData" :options="labsChartOptions" />
-              </div>
-              <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">Aucune donnée sur cette période</p>
-            </div>
-
             <div v-if="linkedTreatment" class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
               <div class="border-b border-[var(--border)] px-5 py-3">
                 <h2 class="flex items-center gap-2 text-sm font-semibold">
                   <Pill :size="14" class="text-[var(--primary)]" /> Historique du traitement
                 </h2>
               </div>
-              <div class="overflow-x-auto">
+              <div class="divide-y divide-[var(--border)] sm:hidden">
+                <div
+                  v-for="d in [...filteredLabsDoses].reverse()"
+                  :key="d.date + d.doseLabel"
+                  class="px-4 py-3"
+                >
+                  <p class="text-sm font-medium">{{ d.date }} · {{ d.doseLabel }}</p>
+                  <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+                    {{ eventLabels[d.evenement] ?? d.evenement }}
+                    · {{ linkedTreatment.historique.find((h) => h.date === d.date)?.posologie }}
+                    <span v-if="d.note" class="italic"> · {{ d.note }}</span>
+                  </p>
+                </div>
+              </div>
+              <div class="hidden overflow-x-auto sm:block">
                 <table class="w-full text-sm">
                   <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
                     <tr>
@@ -585,7 +573,27 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
                   <Activity :size="14" class="text-[var(--primary)]" /> Dosages
                 </h2>
               </div>
-              <div class="overflow-x-auto">
+              <div class="divide-y divide-[var(--border)] sm:hidden">
+                <div
+                  v-for="p in [...filteredPrimary].reverse()"
+                  :key="p.date + p.value"
+                  class="px-4 py-3"
+                >
+                  <p class="text-sm font-medium">{{ p.date }} · {{ p.value }} {{ p.unit }}</p>
+                  <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+                    Réf. {{ p.ref_low ?? '—' }} – {{ p.ref_high ?? '—' }} · {{ p.lab }}
+                    <span
+                      v-if="p.out_of_range"
+                      class="ml-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                    >Hors norme</span>
+                    <span
+                      v-else
+                      class="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+                    >OK</span>
+                  </p>
+                </div>
+              </div>
+              <div class="hidden overflow-x-auto sm:block">
                 <table class="w-full text-sm">
                   <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
                     <tr>
@@ -620,7 +628,27 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
               <div class="border-b border-[var(--border)] px-5 py-3">
                 <h2 class="text-sm font-semibold">Autres analytes</h2>
               </div>
-              <div class="overflow-x-auto">
+              <div class="divide-y divide-[var(--border)] sm:hidden">
+                <div
+                  v-for="(p, i) in [...filteredSecondary].reverse()"
+                  :key="p.date + p.analyte + i"
+                  class="px-4 py-3"
+                >
+                  <p class="text-sm font-medium">{{ p.date }} · {{ p.analyte }}</p>
+                  <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+                    {{ p.value }} {{ p.unit }} · {{ p.ref_low ?? '—' }} – {{ p.ref_high ?? '—' }}
+                    <span
+                      v-if="p.out_of_range"
+                      class="ml-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                    >Hors norme</span>
+                    <span
+                      v-else
+                      class="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
+                    >OK</span>
+                  </p>
+                </div>
+              </div>
+              <div class="hidden overflow-x-auto sm:block">
                 <table class="w-full text-sm">
                   <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
                     <tr>
@@ -663,16 +691,40 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
           </div>
 
           <template v-else>
-            <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
-              <DateRangeFilter
-                :preset="medPreset"
-                :custom-from="medFrom"
-                :custom-to="medTo"
-                @update:preset="medPreset = $event"
-                @update:custom-from="medFrom = $event"
-                @update:custom-to="medTo = $event"
-                @select="medSetPreset"
-              />
+            <div
+              class="-mx-4 -mt-4 overflow-hidden border-y border-[var(--border)] bg-[var(--card)] sm:-mx-6 sm:-mt-6 md:mx-0 md:mt-0 md:rounded-2xl md:border"
+            >
+              <div class="flex flex-col gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+                <DateRangeFilter
+                  :preset="medPreset"
+                  :custom-from="medFrom"
+                  :custom-to="medTo"
+                  @update:preset="medPreset = $event"
+                  @update:custom-from="medFrom = $event"
+                  @update:custom-to="medTo = $event"
+                  @select="medSetPreset"
+                />
+                <div class="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <AddSuiviEntryDialog
+                    type="rx"
+                    :treatment-name-includes="medConfig.treatmentNameIncludes"
+                    :dose-unit="medConfig.doseUnit"
+                    :titre="medConfig.title"
+                    @added="onRxEntryAdded"
+                  />
+                  <PdfButton
+                    :download-endpoint="traitementsPdfEndpoint"
+                    label="Télécharger le PDF"
+                  />
+                </div>
+              </div>
+              <div class="px-1 py-3 sm:px-5 sm:py-5">
+                <h2 class="mb-3 px-3 text-sm font-semibold text-[var(--foreground)] sm:px-0">Courbe de dose</h2>
+                <div v-if="medDosePoints.length" class="h-56 w-full sm:h-80 lg:h-96">
+                  <Line :data="medChartData" :options="medChartOptions" />
+                </div>
+                <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">Aucune donnée sur cette période</p>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -725,21 +777,26 @@ const medChartOptions = computed((): ChartOptions<'line'> => {
               </div>
             </div>
 
-            <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-              <h2 class="mb-4 text-sm font-semibold text-[var(--foreground)]">Courbe de dose</h2>
-              <div v-if="medDosePoints.length" class="h-80 w-full">
-                <Line :data="medChartData" :options="medChartOptions" />
-              </div>
-              <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">Aucune donnée sur cette période</p>
-            </div>
-
             <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
               <div class="border-b border-[var(--border)] px-5 py-3">
                 <h2 class="flex items-center gap-2 text-sm font-semibold">
                   <Pill :size="14" class="text-[var(--primary)]" /> Historique
                 </h2>
               </div>
-              <div class="overflow-x-auto">
+              <div class="divide-y divide-[var(--border)] sm:hidden">
+                <div
+                  v-for="d in [...filteredMedDoses].reverse()"
+                  :key="d.date + d.doseLabel + d.evenement"
+                  class="px-4 py-3"
+                >
+                  <p class="text-sm font-medium">{{ d.date }} · {{ d.doseLabel }}</p>
+                  <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+                    {{ eventLabels[d.evenement] ?? d.evenement }} · {{ d.posologie }}
+                    <span v-if="d.note" class="italic"> · {{ d.note }}</span>
+                  </p>
+                </div>
+              </div>
+              <div class="hidden overflow-x-auto sm:block">
                 <table class="w-full text-sm">
                   <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
                     <tr>

@@ -38,19 +38,17 @@ const emit = defineEmits<{
       <DialogContent
         :class="
           cn(
-            'fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2',
-            'rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl',
+            'fixed z-50 flex w-full flex-col overflow-hidden border border-[var(--border)] bg-[var(--card)] shadow-2xl',
+            'inset-x-0 bottom-0 max-h-[100dvh] rounded-t-2xl pb-[env(safe-area-inset-bottom)]',
+            'sm:inset-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[90vh] sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:pb-0',
             'data-[state=open]:animate-in data-[state=closed]:animate-out',
             'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
             'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-            'data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]',
-            'data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
             props.class,
           )
         "
       >
-        <!-- Header -->
-        <div class="flex items-start justify-between border-b border-[var(--border)] px-6 py-4">
+        <div class="flex shrink-0 items-start justify-between border-b border-[var(--border)] px-4 py-3 sm:px-6 sm:py-4">
           <div>
             <DialogTitle
               v-if="props.title"
@@ -74,8 +72,9 @@ const emit = defineEmits<{
           </DialogClose>
         </div>
 
-        <!-- Body -->
-        <slot />
+        <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <slot />
+        </div>
       </DialogContent>
     </DialogPortal>
   </DialogRoot>

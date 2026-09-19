@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useLabPdfs } from '@/composables/useLabPdfs'
+import { useMobileSheet } from '@/composables/useMobileSheet'
 import PageShell from '@/components/PageShell.vue'
+import BottomSheet from '@/components/ui/BottomSheet.vue'
+import PriseDeSangDetailView from '@/views/PriseDeSangDetailView.vue'
+import CompactRow from '@/components/CompactRow.vue'
 import {
   Calendar,
   ChevronRight,
@@ -16,8 +19,8 @@ import {
 } from '@lucide/vue'
 import { apiFetch } from '@/lib/apiFetch'
 
-const router = useRouter()
 const { items, loading, error, load } = useLabPdfs()
+const { itemId, sheetOpen, openItem } = useMobileSheet()
 
 const searchQuery = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -63,6 +66,13 @@ function formatDate(dateStr: string | null) {
   return `${parseInt(day)} ${months[parseInt(month) - 1]} ${year}`
 }
 
+function formatShortDate(dateStr: string | null) {
+  if (!dateStr) return ''
+  const [, month, day] = dateStr.split('-')
+  const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+  return `${parseInt(day)} ${months[parseInt(month) - 1]}`
+}
+
 function formatGroupLabel(key: string) {
   if (key === 'Sans date') return key
   const [year, month] = key.split('-')
@@ -74,7 +84,7 @@ function formatGroupLabel(key: string) {
 }
 
 function open(id: string) {
-  void router.push(`/prise-de-sang/${encodeURIComponent(id)}`)
+  openItem(id, `/prise-de-sang/${encodeURIComponent(id)}`)
 }
 
 function pickFile() {
@@ -160,7 +170,7 @@ async function onFileSelected(ev: Event) {
       <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
     </template>
     <template #actions>
-      <div class="relative min-w-[12rem] flex-1 sm:min-w-[16rem]">
+      <div class="relative w-full min-w-0 flex-1">
         <Search
           :size="16"
           class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
@@ -244,9 +254,12 @@ async function onFileSelected(ev: Event) {
       </p>
     </div>
 
-    <div v-else class="space-y-8">
+    <div v-else class="space-y-5 md:space-y-8">
       <div v-for="([groupKey, groupItems]) in grouped" :key="groupKey">
-        <div class="mb-4 flex items-center gap-3">
+        <p class="mb-1 text-[15px] text-[var(--muted-foreground)] md:hidden">
+          {{ formatGroupLabel(groupKey) }}
+        </p>
+        <div class="mb-4 hidden items-center gap-3 md:flex">
           <span class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
             {{ formatGroupLabel(groupKey) }}
           </span>
@@ -254,7 +267,22 @@ async function onFileSelected(ev: Event) {
           <span class="text-xs text-[var(--muted-foreground)]">{{ groupItems.length }}</span>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="md:hidden">
+          <CompactRow
+            v-for="item in groupItems"
+            :key="item.id"
+            title="Résultats"
+            :meta="formatShortDate(item.date)"
+            :subtitle="item.lab"
+            @click="open(item.id)"
+          >
+            <template #icon>
+              <Droplets :size="20" />
+            </template>
+          </CompactRow>
+        </div>
+
+        <div class="hidden grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 md:grid">
           <button
             v-for="item in groupItems"
             :key="item.id"
@@ -291,4 +319,13 @@ async function onFileSelected(ev: Event) {
       </div>
     </div>
   </PageShell>
+
+  <BottomSheet v-model:open="sheetOpen">
+    <PriseDeSangDetailView
+      v-if="itemId"
+      embedded
+      :item-id="itemId"
+      @update:item-id="itemId = $event"
+    />
+  </BottomSheet>
 </template>

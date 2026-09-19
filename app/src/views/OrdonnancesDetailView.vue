@@ -23,6 +23,15 @@ import {
   Stethoscope,
 } from '@lucide/vue'
 
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    itemId?: string
+  }>(),
+  { embedded: false },
+)
+const emit = defineEmits<{ 'update:itemId': [id: string] }>()
+
 const route = useRoute()
 const router = useRouter()
 const { profil, age } = useProfile()
@@ -31,7 +40,7 @@ const detail = ref<OrdonnanceDetail | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const pdfId = computed(() => String(route.params.id || ''))
+const pdfId = computed(() => String(props.itemId || route.params.id || ''))
 
 async function load() {
   if (!pdfId.value) return
@@ -57,13 +66,17 @@ const fullName = computed(() => {
 
 function go(id: string | null) {
   if (!id) return
+  if (props.embedded) {
+    emit('update:itemId', id)
+    return
+  }
   void router.push(`/ordonnances/${encodeURIComponent(id)}`)
 }
 </script>
 
 <template>
-  <PageShell max-width="narrow">
-    <template #header>
+  <PageShell :plain="embedded" max-width="narrow">
+    <template v-if="!embedded" #header>
       <div class="flex items-center gap-3">
         <button
           type="button"
@@ -87,6 +100,19 @@ function go(id: string | null) {
         </div>
       </div>
     </template>
+
+    <div v-if="embedded && detail" class="mb-4">
+      <h1 class="text-lg font-bold text-[var(--foreground)]">
+        {{
+          detail.meta.kind === 'biologie'
+            ? (detail.meta.date ? `Biologie du ${formatOrdonnanceDate(detail.meta.date)}` : 'Ordonnance de biologie')
+            : (detail.meta.date ? `Ordonnance du ${formatOrdonnanceDate(detail.meta.date)}` : 'Ordonnance')
+        }}
+      </h1>
+      <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+        {{ detail.meta.prescriber || 'Prescripteur inconnu' }}
+      </p>
+    </div>
 
     <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
       {{ error }}

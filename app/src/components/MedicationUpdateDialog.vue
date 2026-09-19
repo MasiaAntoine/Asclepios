@@ -80,7 +80,7 @@ function close() {
       leave-active-class="transition duration-100"
       leave-to-class="opacity-0"
     >
-      <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div v-if="open" class="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
         <!-- Backdrop -->
         <div
           class="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -88,7 +88,7 @@ function close() {
         />
 
         <!-- Panel -->
-        <div class="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-2xl">
+        <div class="relative z-10 max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-[var(--border)] bg-[var(--card)] pb-[env(safe-area-inset-bottom)] shadow-2xl sm:max-h-[90vh] sm:rounded-2xl sm:pb-0">
 
           <!-- Header -->
           <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">

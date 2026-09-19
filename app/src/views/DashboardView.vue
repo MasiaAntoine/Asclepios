@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useMobileSheet } from '@/composables/useMobileSheet'
+import BottomSheet from '@/components/ui/BottomSheet.vue'
+import ReportDetailView from '@/views/ReportDetailView.vue'
+import MedDocView from '@/views/MedDocView.vue'
+import OrdonnancesDetailView from '@/views/OrdonnancesDetailView.vue'
+import PriseDeSangDetailView from '@/views/PriseDeSangDetailView.vue'
 import { useProfile } from '@/composables/useProfile'
 import { useReports } from '@/composables/useReports'
 import { usePoids } from '@/composables/usePoids'
@@ -27,6 +33,14 @@ import {
 } from '@lucide/vue'
 
 const router = useRouter()
+const { itemId, sheetOpen, openItem } = useMobileSheet()
+type DashSheet = 'report' | 'med' | 'ord' | 'lab'
+const sheetKind = ref<DashSheet | null>(null)
+
+function openDetail(kind: DashSheet, id: string, path: string) {
+  sheetKind.value = kind
+  openItem(id, path)
+}
 
 const {
   profil,
@@ -304,7 +318,7 @@ function go(path: string) {
               <button
                 type="button"
                 class="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-[var(--accent)]/50"
-                @click="go(`/meds/${t.id}`)"
+                @click="openDetail('med', t.id, `/meds/${t.id}`)"
               >
                 <div class="min-w-0">
                   <p class="truncate text-sm font-medium text-[var(--foreground)]">{{ t.nom }}</p>
@@ -418,7 +432,7 @@ function go(path: string) {
               <button
                 type="button"
                 class="flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--accent)]/50"
-                @click="go(`/rapports/${r.id}`)"
+                @click="openDetail('report', r.id, `/rapports/${r.id}`)"
               >
                 <span class="truncate text-sm font-medium text-[var(--foreground)]">{{ r.title }}</span>
                 <span class="text-[11px] text-[var(--muted-foreground)]">{{ formatReportDate(r.date) }}</span>
@@ -448,7 +462,7 @@ function go(path: string) {
               <button
                 type="button"
                 class="flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--accent)]/50"
-                @click="go(`/ordonnances/${encodeURIComponent(o.id)}`)"
+                @click="openDetail('ord', o.id, `/ordonnances/${encodeURIComponent(o.id)}`)"
               >
                 <span class="truncate text-sm font-medium text-[var(--foreground)]">
                   {{
@@ -484,7 +498,7 @@ function go(path: string) {
               <button
                 type="button"
                 class="flex w-full flex-col rounded-lg px-2 py-1.5 text-left transition hover:bg-[var(--accent)]/50"
-                @click="go(`/prise-de-sang/${encodeURIComponent(lab.id)}`)"
+                @click="openDetail('lab', lab.id, `/prise-de-sang/${encodeURIComponent(lab.id)}`)"
               >
                 <span class="truncate text-sm font-medium text-[var(--foreground)]">
                   {{ lab.date ? `Résultats · ${formatLabDate(lab.date)}` : lab.title }}
@@ -544,4 +558,29 @@ function go(path: string) {
       </div>
     </div>
   </PageShell>
+
+  <BottomSheet v-model:open="sheetOpen">
+    <ReportDetailView
+      v-if="itemId && sheetKind === 'report'"
+      embedded
+      :item-id="itemId"
+    />
+    <MedDocView
+      v-else-if="itemId && sheetKind === 'med'"
+      embedded
+      :item-id="itemId"
+    />
+    <OrdonnancesDetailView
+      v-else-if="itemId && sheetKind === 'ord'"
+      embedded
+      :item-id="itemId"
+      @update:item-id="itemId = $event"
+    />
+    <PriseDeSangDetailView
+      v-else-if="itemId && sheetKind === 'lab'"
+      embedded
+      :item-id="itemId"
+      @update:item-id="itemId = $event"
+    />
+  </BottomSheet>
 </template>

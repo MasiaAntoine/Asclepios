@@ -31,7 +31,7 @@ const showApp = computed(() => checked.value && authenticated.value && !isLogin.
   >
     <AppSidebar />
     <main
-      class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-[calc(3.5rem+env(safe-area-inset-top))] md:pt-0"
+      class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-[calc(3.5rem+env(safe-area-inset-top))] pb-[calc(var(--mobile-dock,5.75rem)+env(safe-area-inset-bottom))] md:pt-0 md:pb-0"
     >
       <RouterView />
     </main>

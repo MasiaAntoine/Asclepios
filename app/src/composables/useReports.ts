@@ -75,12 +75,19 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const contentCache = new Map<string, string>()
 let loaded = false
+let loadPromise: Promise<void> | null = null
+let loadGeneration = 0
 
-async function loadIndex() {
-  if (loaded) return
+async function loadIndex(force = false) {
+  if (!force && loaded) return
+  if (!force && loadPromise) return loadPromise
+
+  loaded = false
   loading.value = true
   error.value = null
-  try {
+  const generation = ++loadGeneration
+
+  const run = (async () => {
     const index = await fetchJson<IndexEntry[]>(VAULT.rapportsIndex)
     const metas: ReportMeta[] = []
     await Promise.all(
@@ -90,13 +97,40 @@ async function loadIndex() {
         metas.push(parseMeta(entry.id, entry.file, content))
       }),
     )
+    if (generation !== loadGeneration) return
     reports.value = metas.sort((a, b) => b.date.localeCompare(a.date))
     loaded = true
+  })()
+
+  loadPromise = run
+  try {
+    await run
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Erreur de chargement'
-    reports.value = []
+    if (generation === loadGeneration) {
+      error.value = e instanceof Error ? e.message : 'Erreur de chargement'
+      reports.value = []
+      loaded = false
+    }
   } finally {
-    loading.value = false
+    if (loadPromise === run) {
+      loadPromise = null
+      loading.value = false
+    }
+  }
+}
+
+async function fetchReportFile(id: string): Promise<Report | undefined> {
+  const file = `${id}.md`
+  try {
+    const content = await fetchText(rapportFile(file))
+    const meta = parseMeta(id, file, content)
+    contentCache.set(id, content)
+    if (!reports.value.some((r) => r.id === id)) {
+      reports.value = [...reports.value, meta].sort((a, b) => b.date.localeCompare(a.date))
+    }
+    return { ...meta, content }
+  } catch {
+    return undefined
   }
 }
 
@@ -108,8 +142,12 @@ export function useReports() {
   async function getReport(id: string): Promise<Report | undefined> {
     const normalized = id.replace(/\.md$/i, '')
     if (!loaded) await loadIndex()
-    const meta = reports.value.find((r) => r.id === normalized)
-    if (!meta) return undefined
+    let meta = reports.value.find((r) => r.id === normalized)
+    if (!meta) {
+      await loadIndex(true)
+      meta = reports.value.find((r) => r.id === normalized)
+    }
+    if (!meta) return fetchReportFile(normalized)
     let content = contentCache.get(normalized)
     if (!content) {
       content = await fetchText(rapportFile(meta.file))
@@ -134,9 +172,8 @@ export function useReports() {
     getReport,
     getReportSync,
     reload: () => {
-      loaded = false
       contentCache.clear()
-      return loadIndex()
+      return loadIndex(true)
     },
   }
 }

@@ -183,7 +183,7 @@ function scrollBottom() {
     >
       <div
         v-if="open"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm"
         @click.self="closeDialog"
       >
         <Transition
@@ -194,7 +194,7 @@ function scrollBottom() {
         >
           <div
             v-if="open"
-            class="relative w-full max-w-lg rounded-2xl bg-[var(--card)] shadow-2xl ring-1 ring-[var(--border)]"
+            class="relative max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--card)] pb-[env(safe-area-inset-bottom)] shadow-2xl ring-1 ring-[var(--border)] sm:max-h-[90vh] sm:rounded-2xl sm:pb-0"
           >
             <!-- Header -->
             <div class="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
@@ -218,7 +218,7 @@ function scrollBottom() {
 
               <!-- ── LABS form ── -->
               <template v-if="type === 'labs'">
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Date *</label>
                     <input
@@ -238,7 +238,7 @@ function scrollBottom() {
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Valeur *</label>
                     <input
@@ -260,7 +260,7 @@ function scrollBottom() {
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Réf. basse</label>
                     <input
@@ -318,7 +318,7 @@ function scrollBottom() {
 
               <!-- ── RX form ── -->
               <template v-else>
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Date *</label>
                     <input

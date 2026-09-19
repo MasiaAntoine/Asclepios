@@ -153,7 +153,7 @@ function goTo(i: number) {
                       <span v-else>{{ i + 1 }}</span>
                     </span>
                     <span
-                      class="w-full truncate text-center text-[10px] font-medium uppercase tracking-wide"
+                      class="w-full truncate text-center text-[11px] font-medium tracking-wide sm:text-xs sm:uppercase"
                       :class="
                         i === index
                           ? 'text-[var(--primary)]'
@@ -178,7 +178,7 @@ function goTo(i: number) {
 
             <footer
               v-if="!hideFooter"
-              class="shrink-0 flex items-center justify-between gap-3 border-t border-[var(--border)] bg-[var(--card)] px-6 py-4"
+              class="shrink-0 flex items-center justify-between gap-3 border-t border-[var(--border)] bg-[var(--card)] px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
             >
               <button
                 type="button"

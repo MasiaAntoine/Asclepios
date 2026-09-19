@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useOrdonnances } from '@/composables/useOrdonnances'
+import { useMobileSheet } from '@/composables/useMobileSheet'
 import PageShell from '@/components/PageShell.vue'
+import BottomSheet from '@/components/ui/BottomSheet.vue'
+import OrdonnancesDetailView from '@/views/OrdonnancesDetailView.vue'
+import CompactRow from '@/components/CompactRow.vue'
 import {
   Calendar,
   ChevronRight,
@@ -17,8 +20,8 @@ import {
 } from '@lucide/vue'
 import { apiFetch } from '@/lib/apiFetch'
 
-const router = useRouter()
 const { items, loading, error, load } = useOrdonnances()
+const { itemId, sheetOpen, openItem } = useMobileSheet()
 
 const searchQuery = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -75,6 +78,27 @@ function formatGroupLabel(key: string) {
   return `${months[parseInt(month) - 1]} ${year}`
 }
 
+function formatShortDate(dateStr: string | null) {
+  if (!dateStr) return ''
+  const [, month, day] = dateStr.split('-')
+  const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+  return `${parseInt(day)} ${months[parseInt(month) - 1]}`
+}
+
+function compactKind(item: (typeof items.value)[number]) {
+  return item.kind === 'biologie' ? 'Biologie' : 'Ordonnance'
+}
+
+function compactSubtitle(item: (typeof items.value)[number]) {
+  const parts = [item.prescriber]
+  if (item.kind === 'biologie' && item.exams_count != null) {
+    parts.push(`${item.exams_count} analyse${item.exams_count > 1 ? 's' : ''}`)
+  } else if (item.medications_count != null) {
+    parts.push(`${item.medications_count} médicament${item.medications_count > 1 ? 's' : ''}`)
+  }
+  return parts.filter(Boolean).join(' · ')
+}
+
 function cardTitle(item: (typeof items.value)[number]) {
   if (item.kind === 'biologie') {
     return item.date ? `Biologie du ${formatDate(item.date)}` : item.title
@@ -83,7 +107,7 @@ function cardTitle(item: (typeof items.value)[number]) {
 }
 
 function open(id: string) {
-  void router.push(`/ordonnances/${encodeURIComponent(id)}`)
+  openItem(id, `/ordonnances/${encodeURIComponent(id)}`)
 }
 
 function pickFile() {
@@ -169,7 +193,7 @@ async function onFileSelected(ev: Event) {
       <p v-if="error" class="mt-1 text-xs text-red-600">{{ error }}</p>
     </template>
     <template #actions>
-      <div class="relative min-w-[12rem] flex-1 sm:min-w-[16rem]">
+      <div class="relative w-full min-w-0 flex-1">
         <Search
           :size="16"
           class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
@@ -253,9 +277,12 @@ async function onFileSelected(ev: Event) {
       </p>
     </div>
 
-    <div v-else class="space-y-8">
+    <div v-else class="space-y-5 md:space-y-8">
       <div v-for="([groupKey, groupItems]) in grouped" :key="groupKey">
-        <div class="mb-4 flex items-center gap-3">
+        <p class="mb-1 text-[15px] text-[var(--muted-foreground)] md:hidden">
+          {{ formatGroupLabel(groupKey) }}
+        </p>
+        <div class="mb-4 hidden items-center gap-3 md:flex">
           <span class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
             {{ formatGroupLabel(groupKey) }}
           </span>
@@ -263,7 +290,23 @@ async function onFileSelected(ev: Event) {
           <span class="text-xs text-[var(--muted-foreground)]">{{ groupItems.length }}</span>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="md:hidden">
+          <CompactRow
+            v-for="item in groupItems"
+            :key="item.id"
+            :title="compactKind(item)"
+            :meta="formatShortDate(item.date)"
+            :subtitle="compactSubtitle(item)"
+            @click="open(item.id)"
+          >
+            <template #icon>
+              <FlaskConical v-if="item.kind === 'biologie'" :size="20" />
+              <Pill v-else :size="20" />
+            </template>
+          </CompactRow>
+        </div>
+
+        <div class="hidden grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 md:grid">
           <button
             v-for="item in groupItems"
             :key="item.id"
@@ -320,4 +363,13 @@ async function onFileSelected(ev: Event) {
       </div>
     </div>
   </PageShell>
+
+  <BottomSheet v-model:open="sheetOpen">
+    <OrdonnancesDetailView
+      v-if="itemId"
+      embedded
+      :item-id="itemId"
+      @update:item-id="itemId = $event"
+    />
+  </BottomSheet>
 </template>

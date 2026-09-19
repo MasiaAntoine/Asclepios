@@ -180,14 +180,6 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
         </template>
       </p>
     </template>
-    <template #actions>
-      <AddWeightDialog @added="onWeightAdded" />
-      <PdfButton
-        :download-endpoint="pdfEndpoint"
-        label="Télécharger le PDF"
-      />
-    </template>
-
     <div class="space-y-6">
       <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
         {{ error }}
@@ -197,17 +189,36 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
       </div>
 
       <template v-else>
-      <!-- Date range -->
-      <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
-        <DateRangeFilter
-          :preset="preset"
-          :custom-from="customFrom"
-          :custom-to="customTo"
-          @update:preset="preset = $event"
-          @update:custom-from="customFrom = $event"
-          @update:custom-to="customTo = $event"
-          @select="onSelectPreset"
-        />
+      <div
+        class="-mx-4 -mt-4 overflow-hidden border-y border-[var(--border)] bg-[var(--card)] sm:-mx-6 sm:-mt-6 md:mx-0 md:mt-0 md:rounded-2xl md:border"
+      >
+        <div class="flex flex-col gap-3 border-b border-[var(--border)] px-4 py-3 sm:px-5">
+          <DateRangeFilter
+            :preset="preset"
+            :custom-from="customFrom"
+            :custom-to="customTo"
+            @update:preset="preset = $event"
+            @update:custom-from="customFrom = $event"
+            @update:custom-to="customTo = $event"
+            @select="onSelectPreset"
+          />
+          <div class="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <AddWeightDialog @added="onWeightAdded" />
+            <PdfButton
+              :download-endpoint="pdfEndpoint"
+              label="Télécharger le PDF"
+            />
+          </div>
+        </div>
+        <div class="px-1 py-3 sm:px-5 sm:py-5">
+          <h2 class="mb-3 px-3 text-sm font-semibold text-[var(--foreground)] sm:px-0">Courbe de poids</h2>
+          <div v-if="filtered.length" class="h-56 w-full sm:h-80 lg:h-96">
+            <Line :data="chartData" :options="chartOptions" />
+          </div>
+          <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">
+            Aucune mesure sur cette période
+          </p>
+        </div>
       </div>
 
       <!-- Stats -->
@@ -255,23 +266,27 @@ function onSelectPreset(id: Parameters<typeof setPreset>[0]) {
         </div>
       </div>
 
-      <!-- Chart -->
-      <div class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
-        <h2 class="mb-4 text-sm font-semibold text-[var(--foreground)]">Courbe de poids</h2>
-        <div v-if="filtered.length" class="h-80 w-full">
-          <Line :data="chartData" :options="chartOptions" />
-        </div>
-        <p v-else class="py-16 text-center text-sm text-[var(--muted-foreground)]">
-          Aucune mesure sur cette période
-        </p>
-      </div>
-
       <!-- Table -->
       <div class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
         <div class="border-b border-[var(--border)] px-5 py-3">
           <h2 class="text-sm font-semibold">Historique des mesures</h2>
         </div>
-        <div class="overflow-x-auto">
+        <div class="divide-y divide-[var(--border)] sm:hidden">
+          <div
+            v-for="e in tableRows"
+            :key="e.date + e.poids_kg"
+            class="px-4 py-3"
+          >
+            <p class="text-sm font-medium text-[var(--foreground)]">{{ e.date }}</p>
+            <p class="mt-1 text-sm text-[var(--muted-foreground)]">
+              {{ e.poids_kg }} kg · IMC {{ e.imc?.toFixed(1) ?? '—' }}
+              <span v-if="e.delta != null" :class="deltaClass(e.delta)">
+                · {{ e.delta > 0 ? '+' : '' }}{{ e.delta }}
+              </span>
+            </p>
+          </div>
+        </div>
+        <div class="hidden overflow-x-auto sm:block">
           <table class="w-full text-sm">
             <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
               <tr>

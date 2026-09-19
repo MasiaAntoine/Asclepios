@@ -42,7 +42,7 @@ function backToPassword() {
 
 <template>
   <div
-    class="flex min-h-dvh items-center justify-center bg-[var(--background)] px-4 py-10"
+    class="flex min-h-dvh items-center justify-center bg-[var(--background)] px-4 py-10 pt-[max(2.5rem,env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))]"
   >
     <div
       class="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-8 shadow-sm"

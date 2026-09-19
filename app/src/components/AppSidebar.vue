@@ -1,24 +1,15 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import logoIconUrl from '@/assets/logo-icon.png'
 import { useAuth } from '@/composables/useAuth'
+import { hubForPath } from '@/lib/hubs'
 import {
   Activity,
-  BookOpen,
-  CalendarDays,
-  Droplets,
   FileText,
   LayoutDashboard,
   LogOut,
-  Menu,
-  MessageSquare,
-  Scale,
-  ScrollText,
-  Settings,
-  Stethoscope,
   UserRound,
-  X,
   type LucideIcon,
 } from '@lucide/vue'
 
@@ -29,203 +20,144 @@ interface NavItem {
   icon: LucideIcon
   to: string
   name: string
-  badge?: string
-}
-
-interface NavSection {
-  label: string | null
-  items: NavItem[]
 }
 
 const route = useRoute()
 const router = useRouter()
-const mobileOpen = ref(false)
+const keyboardOpen = ref(false)
+let dockRaf = 0
 
-const navSections: NavSection[] = [
-  {
-    label: null,
-    items: [
-      { label: 'Tableau de bord', icon: LayoutDashboard, to: '/', name: 'dashboard' },
-    ],
-  },
-  {
-    label: 'Asclepios',
-    items: [
-      {
-        label: 'Discuter',
-        icon: MessageSquare,
-        to: '/assistant',
-        name: 'chat',
-        badge: 'IA',
-      },
-    ],
-  },
-  {
-    label: 'Dossier',
-    items: [
-      { label: 'Profil', icon: UserRound, to: '/profil', name: 'profile' },
-      { label: 'Médecins', icon: Stethoscope, to: '/medecins', name: 'doctors' },
-      { label: 'Médicaments', icon: BookOpen, to: '/meds', name: 'meds' },
-    ],
-  },
-  {
-    label: 'Documents',
-    items: [
-      { label: 'Rapports', icon: FileText, to: '/rapports', name: 'reports' },
-      { label: 'Ordonnances', icon: ScrollText, to: '/ordonnances', name: 'ordonnances' },
-      { label: 'Prise de sang', icon: Droplets, to: '/prise-de-sang', name: 'prise-de-sang' },
-    ],
-  },
-  {
-    label: 'Suivi',
-    items: [
-      { label: 'Agenda', icon: CalendarDays, to: '/agenda', name: 'agenda' },
-      { label: 'Poids', icon: Scale, to: '/poids', name: 'weight' },
-      { label: 'Suivi', icon: Activity, to: '/suivi', name: 'suivi' },
-    ],
-  },
-  {
-    label: 'Système',
-    items: [
-      { label: 'Paramètres', icon: Settings, to: '/settings', name: 'settings' },
-    ],
-  },
+const primaryTabs: NavItem[] = [
+  { label: 'Accueil', icon: LayoutDashboard, to: '/', name: 'dashboard' },
+  { label: 'Suivi', icon: Activity, to: '/suivi', name: 'suivi' },
+  { label: 'Documents', icon: FileText, to: '/rapports', name: 'documents' },
+  { label: 'Dossier', icon: UserRound, to: '/profil', name: 'dossier' },
 ]
+
+function isTabActive(item: NavItem) {
+  if (item.to === '/') return route.path === '/'
+  const hub = hubForPath(route.path)
+  if (item.name === 'suivi') return hub === 'suivi'
+  if (item.name === 'documents') return hub === 'documents'
+  if (item.name === 'dossier') return hub === 'dossier'
+  return route.path.startsWith(item.to)
+}
+
+const chatActive = computed(() => route.path.startsWith('/assistant'))
+
+const pageTitle = computed(() => {
+  if (route.path === '/') return 'Accueil'
+  if (chatActive.value) return 'Discuter'
+  const hub = hubForPath(route.path)
+  if (hub === 'suivi') return 'Suivi'
+  if (hub === 'documents') return 'Documents'
+  if (hub === 'dossier') return 'Dossier'
+  return 'Asclepios'
+})
+
+function navigate(item: NavItem) {
+  void router.push(item.to)
+}
+
+function goChat() {
+  void router.push('/assistant')
+}
+
+async function onLogout() {
+  await logout()
+  await router.push({ name: 'login' })
+}
+
+function syncDockOffset() {
+  cancelAnimationFrame(dockRaf)
+  dockRaf = requestAnimationFrame(() => {
+    const vv = window.visualViewport
+    const isCompact = window.matchMedia('(max-width: 767px)').matches
+    const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0
+    keyboardOpen.value = isCompact && inset > 60
+    const offset = !isCompact || keyboardOpen.value ? '0px' : '5.75rem'
+    document.documentElement.style.setProperty('--mobile-dock', offset)
+  })
+}
+
+onMounted(() => {
+  syncDockOffset()
+  const vv = window.visualViewport
+  vv?.addEventListener('resize', syncDockOffset)
+  vv?.addEventListener('scroll', syncDockOffset)
+  window.addEventListener('resize', syncDockOffset)
+})
+
+onUnmounted(() => {
+  cancelAnimationFrame(dockRaf)
+  const vv = window.visualViewport
+  vv?.removeEventListener('resize', syncDockOffset)
+  vv?.removeEventListener('scroll', syncDockOffset)
+  window.removeEventListener('resize', syncDockOffset)
+  document.documentElement.style.removeProperty('--mobile-dock')
+})
 
 watch(
   () => route.fullPath,
   () => {
-    mobileOpen.value = false
+    syncDockOffset()
   },
 )
-
-const isActive = (to: string) =>
-  to === '/' ? route.path === '/' : route.path.startsWith(to)
-
-function navigate(item: NavItem) {
-  mobileOpen.value = false
-  void router.push(item.to)
-}
-
-async function onLogout() {
-  mobileOpen.value = false
-  await logout()
-  await router.push({ name: 'login' })
-}
 </script>
 
 <template>
-  <!-- Barre mobile (PWA / téléphone) — hauteur = 3.5rem + safe-area (pas de double comptage) -->
   <header
-    class="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-3 pt-[env(safe-area-inset-top)] md:hidden"
+    class="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 pt-[env(safe-area-inset-top)] md:hidden"
+  >
+    <p class="min-w-0 flex-1 truncate text-sm font-bold text-[var(--foreground)]">
+      {{ pageTitle }}
+    </p>
+  </header>
+
+  <aside
+    class="hidden h-screen w-64 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)] md:flex"
   >
     <button
       type="button"
-      class="rounded-lg p-2 text-[var(--foreground)] transition hover:bg-[var(--accent)]"
-      :aria-expanded="mobileOpen"
-      aria-controls="app-sidebar"
-      aria-label="Ouvrir le menu"
-      @click="mobileOpen = true"
+      class="flex items-center gap-3 border-b border-[var(--border)] px-5 py-5 text-left transition hover:bg-[var(--accent)]"
+      :class="chatActive ? 'bg-[var(--primary)]/8' : ''"
+      @click="goChat"
     >
-      <Menu :size="20" />
-    </button>
-    <img :src="logoIconUrl" alt="" class="h-8 w-8 rounded-lg object-cover" />
-    <div class="min-w-0">
-      <p class="truncate text-sm font-bold text-[var(--foreground)]">Asclepios</p>
-    </div>
-  </header>
-
-  <!-- Overlay mobile -->
-  <Transition
-    enter-active-class="transition-opacity duration-200"
-    leave-active-class="transition-opacity duration-150"
-    enter-from-class="opacity-0"
-    leave-to-class="opacity-0"
-  >
-    <div
-      v-if="mobileOpen"
-      class="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px] md:hidden"
-      @click="mobileOpen = false"
-    />
-  </Transition>
-
-  <aside
-    id="app-sidebar"
-    class="fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] flex-col border-r border-[var(--border)] bg-[var(--card)] pt-[env(safe-area-inset-top)] transition-transform duration-200 md:static md:z-auto md:h-screen md:w-64 md:max-w-none md:translate-x-0 md:pt-0"
-    :class="mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'"
-  >
-    <!-- Logo / Brand -->
-    <div class="flex items-center gap-3 border-b border-[var(--border)] px-5 py-5">
       <img
         :src="logoIconUrl"
         alt="Asclepios"
-        class="h-10 w-10 rounded-xl object-cover shadow-sm"
+        class="h-10 w-10 rounded-xl object-cover shadow-sm ring-2"
+        :class="chatActive ? 'ring-[var(--primary)]' : 'ring-transparent'"
       />
       <div class="min-w-0 flex-1">
         <p class="text-[15px] font-bold tracking-tight text-[var(--foreground)]">Asclepios</p>
-        <p class="text-[11px] text-[var(--muted-foreground)]">Suivi médical</p>
+        <p class="text-[11px] text-[var(--muted-foreground)]">Discuter avec l’IA</p>
       </div>
-      <button
-        type="button"
-        class="rounded-lg p-2 text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] md:hidden"
-        aria-label="Fermer le menu"
-        @click="mobileOpen = false"
-      >
-        <X :size="18" />
-      </button>
-    </div>
+    </button>
 
-    <!-- Navigation -->
-    <nav class="flex flex-1 flex-col gap-5 overflow-y-auto p-3">
-      <div
-        v-for="(section, sIdx) in navSections"
-        :key="section.label ?? `section-${sIdx}`"
-        class="flex flex-col gap-1"
+    <nav class="flex flex-1 flex-col gap-1 overflow-y-auto p-3" aria-label="Navigation">
+      <button
+        v-for="item in primaryTabs"
+        :key="item.name"
+        type="button"
+        :class="[
+          'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+          isTabActive(item)
+            ? 'bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm'
+            : 'text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
+        ]"
+        @click="navigate(item)"
       >
-        <p
-          v-if="section.label"
-          class="px-3 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]"
-        >
-          {{ section.label }}
-        </p>
-        <button
-          v-for="item in section.items"
-          :key="item.name"
-          type="button"
-          :class="[
-            'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
-            isActive(item.to)
-              ? 'bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm'
-              : 'text-[var(--foreground)] hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]',
-          ]"
-          @click="navigate(item)"
-        >
-          <component
-            :is="item.icon"
-            :size="17"
-            :class="[
-              'shrink-0 transition-transform group-hover:scale-105',
-              isActive(item.to) ? 'text-[var(--primary-foreground)]' : '',
-            ]"
-          />
-          <span class="flex-1 text-left">{{ item.label }}</span>
-          <span
-            v-if="item.badge"
-            :class="[
-              'rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
-              isActive(item.to)
-                ? 'bg-white/20 text-[var(--primary-foreground)]'
-                : 'bg-[var(--primary)]/12 text-[var(--primary)]',
-            ]"
-          >
-            {{ item.badge }}
-          </span>
-        </button>
-      </div>
+        <component
+          :is="item.icon"
+          :size="17"
+          :class="isTabActive(item) ? 'text-[var(--primary-foreground)]' : ''"
+        />
+        <span class="flex-1 text-left">{{ item.label }}</span>
+      </button>
     </nav>
 
-    <!-- Footer -->
-    <div class="space-y-3 border-t border-[var(--border)] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div class="space-y-3 border-t border-[var(--border)] px-5 py-4">
       <button
         type="button"
         class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
@@ -237,4 +169,46 @@ async function onLogout() {
       <p class="text-[11px] text-[var(--muted-foreground)]">Asclepios v0.1.0</p>
     </div>
   </aside>
+
+  <nav
+    class="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex items-end justify-center gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-200 md:hidden"
+    :class="keyboardOpen ? 'translate-y-[120%]' : 'translate-y-0'"
+    aria-label="Navigation"
+  >
+    <div
+      class="pointer-events-auto flex min-w-0 flex-1 items-stretch rounded-full border border-[var(--border)] bg-[var(--card)]/90 p-1.5 shadow-[0_8px_32px_rgba(15,40,30,0.16)] backdrop-blur-xl"
+    >
+      <button
+        v-for="item in primaryTabs"
+        :key="item.name"
+        type="button"
+        class="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-1 py-2 transition"
+        :class="
+          isTabActive(item)
+            ? 'bg-[var(--primary)]/12 text-[var(--primary)]'
+            : 'text-[var(--muted-foreground)]'
+        "
+        @click="navigate(item)"
+      >
+        <component :is="item.icon" :size="20" />
+        <span class="max-w-full truncate text-[10px] font-semibold leading-tight">
+          {{ item.label }}
+        </span>
+      </button>
+    </div>
+
+    <button
+      type="button"
+      class="pointer-events-auto relative shrink-0 rounded-full shadow-[0_8px_24px_rgba(15,40,30,0.2)] ring-2 ring-[var(--card)] transition active:scale-95"
+      :class="chatActive ? 'ring-[var(--primary)]' : ''"
+      aria-label="Discuter avec l’IA"
+      @click="goChat"
+    >
+      <img :src="logoIconUrl" alt="" class="h-14 w-14 rounded-full object-cover" />
+      <span
+        v-if="chatActive"
+        class="absolute right-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-[var(--primary)] ring-2 ring-[var(--card)]"
+      />
+    </button>
+  </nav>
 </template>

@@ -13,12 +13,20 @@ interface TocItem {
   level: number
 }
 
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    itemId?: string
+  }>(),
+  { embedded: false },
+)
+
 const route = useRoute()
 const router = useRouter()
 const { getReport, getReportSync, loading: reportsLoading } = useReports()
 
 const reportId = computed(() => {
-  const raw = route.params.slug as string
+  const raw = props.itemId || (route.params.slug as string) || ''
   return raw.replace(/\.md$/i, '')
 })
 
@@ -44,8 +52,9 @@ watch(
 
 // Redirect /rapports/foo.md → /rapports/foo
 watch(
-  () => route.params.slug as string,
+  () => (props.embedded ? '' : (route.params.slug as string)),
   (raw) => {
+    if (props.embedded) return
     if (raw && /\.md$/i.test(raw)) {
       router.replace({
         name: 'report-detail',
@@ -255,10 +264,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <PageShell max-width="xl" no-scroll>
-    <template #header>
+  <PageShell :plain="embedded" max-width="xl" :no-scroll="!embedded">
+    <template v-if="!embedded" #header>
       <div class="flex items-center gap-4">
         <button
+          v-if="!embedded"
           @click="router.push('/rapports')"
           class="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted-foreground)] transition hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
         >
@@ -282,6 +292,20 @@ onUnmounted(() => {
       </div>
     </template>
 
+    <div v-if="embedded && report" class="mb-4">
+      <h1 class="text-lg font-bold text-[var(--foreground)]">{{ report.title }}</h1>
+      <div class="mt-1 flex flex-wrap items-center gap-3">
+        <span class="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+          <Calendar :size="12" />
+          {{ formatDate(report.date) }}
+        </span>
+        <PdfButton
+          :download-endpoint="`/pdf/download/report/${reportId}`"
+          label="Télécharger le PDF"
+        />
+      </div>
+    </div>
+
     <!-- Loading -->
     <div
       v-if="(reportLoading || reportsLoading) && !report"
@@ -297,6 +321,7 @@ onUnmounted(() => {
       </div>
       <p class="text-base font-medium">Rapport introuvable</p>
       <button
+        v-if="!embedded"
         @click="router.push('/rapports')"
         class="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] transition hover:opacity-90"
       >

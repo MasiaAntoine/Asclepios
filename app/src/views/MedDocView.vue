@@ -7,11 +7,19 @@ import { ArrowLeft, BookOpen, ExternalLink, Pill } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
 import PageShell from '@/components/PageShell.vue'
 
+const props = withDefaults(
+  defineProps<{
+    embedded?: boolean
+    itemId?: string
+  }>(),
+  { embedded: false },
+)
+
 const route = useRoute()
 const router = useRouter()
 const { getById, getDoc, load, loading: listLoading, list } = useMedications()
 
-const medId = computed(() => route.params.id as string)
+const medId = computed(() => props.itemId || (route.params.id as string))
 const med = ref<MedicationCard | undefined>()
 const doc = ref<string | null>(null)
 const docLoading = ref(false)
@@ -86,8 +94,8 @@ const eventLabels: Record<string, string> = {
 </script>
 
 <template>
-  <PageShell max-width="sm">
-    <template #header>
+  <PageShell :plain="embedded" max-width="sm">
+    <template v-if="!embedded" #header>
       <div class="flex items-center gap-4">
         <button
           type="button"
@@ -123,6 +131,19 @@ const eventLabels: Record<string, string> = {
       </div>
     </template>
 
+    <div v-if="embedded && med" class="mb-4 flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <h1 class="text-lg font-bold text-[var(--foreground)]">{{ med.nom }}</h1>
+        <p class="mt-0.5 text-xs capitalize text-[var(--muted-foreground)]">
+          {{ med.forme }} · {{ med.moment }}
+        </p>
+      </div>
+      <PdfButton
+        :download-endpoint="`/pdf/download/traitements?filtre=${encodeURIComponent(med.nom)}`"
+        label="PDF"
+      />
+    </div>
+
     <div
       v-if="(listLoading || docLoading) && !med"
       class="flex items-center justify-center py-24 text-sm text-[var(--muted-foreground)]"
@@ -139,6 +160,7 @@ const eventLabels: Record<string, string> = {
       </div>
       <p class="text-base font-medium">Médicament introuvable</p>
       <button
+        v-if="!embedded"
         type="button"
         @click="router.push('/meds')"
         class="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)]"
@@ -188,7 +210,20 @@ const eventLabels: Record<string, string> = {
         <div class="border-b border-[var(--border)] px-5 py-3">
           <h2 class="text-sm font-semibold">Historique des doses</h2>
         </div>
-        <div class="overflow-x-auto">
+        <div class="divide-y divide-[var(--border)] sm:hidden">
+          <div
+            v-for="(h, i) in [...med.historique].reverse()"
+            :key="h.date + h.dose + i"
+            class="px-4 py-3"
+          >
+            <p class="text-sm font-medium text-[var(--foreground)]">{{ h.date }} · {{ h.dose }}</p>
+            <p class="mt-1 text-sm capitalize text-[var(--muted-foreground)]">
+              {{ eventLabels[h.evenement] ?? h.evenement }}
+              <span v-if="h.note" class="italic"> · {{ h.note }}</span>
+            </p>
+          </div>
+        </div>
+        <div class="hidden overflow-x-auto sm:block">
           <table class="w-full text-sm">
             <thead class="bg-[var(--secondary)] text-left text-xs uppercase tracking-wider text-[var(--muted-foreground)]">
               <tr>

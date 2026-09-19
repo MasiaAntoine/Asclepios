@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import HubSubnav from '@/components/HubSubnav.vue'
+import { hubForPath } from '@/lib/hubs'
+
 withDefaults(
   defineProps<{
     /** Titre de page (sinon slot #title) */
@@ -11,13 +16,19 @@ withDefaults(
     noScroll?: boolean
     /** Pas de padding / max-width sur le corps (ex. chat plein écran) */
     flush?: boolean
+    /** Sans chrome (hub, header, padding) — pour embarquer dans une feuille mobile */
+    plain?: boolean
   }>(),
   {
     maxWidth: 'lg',
     noScroll: false,
     flush: false,
+    plain: false,
   },
 )
+
+const route = useRoute()
+const hub = computed(() => hubForPath(route.path))
 
 const maxWidthClass: Record<string, string> = {
   narrow: 'max-w-2xl',
@@ -30,57 +41,75 @@ const maxWidthClass: Record<string, string> = {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden">
-    <!-- Header uniforme -->
+  <div v-if="plain" class="min-h-0">
+    <slot />
+  </div>
+  <div v-else class="flex h-full min-h-0 flex-col overflow-hidden">
     <header
-      v-if="$slots.header || title || $slots.title || description || $slots.description || $slots.actions"
-      class="shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-8 py-6"
+      v-if="$slots.header || hub || title || $slots.title || description || $slots.description || $slots.actions"
+      class="shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3 sm:px-6 sm:py-4 md:px-8"
     >
       <slot name="header">
-        <div class="flex flex-wrap items-start justify-between gap-4">
-          <div class="min-w-0 flex-1">
-            <slot name="title">
-              <h1
-                v-if="title"
-                class="text-2xl font-bold text-[var(--foreground)]"
-              >
-                {{ title }}
-              </h1>
-            </slot>
-            <slot name="description">
-              <p
-                v-if="description"
-                class="mt-0.5 text-sm text-[var(--muted-foreground)]"
-              >
-                {{ description }}
-              </p>
-            </slot>
-          </div>
+        <div class="flex flex-col gap-3">
+          <HubSubnav v-if="hub" :hub="hub" />
           <div
-            v-if="$slots.actions"
-            class="flex flex-wrap items-center gap-2"
+            v-if="(!hub && (title || $slots.title || description || $slots.description)) || $slots.actions || description || $slots.description"
+            class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4"
           >
-            <slot name="actions" />
+            <div v-if="!hub" class="min-w-0 flex-1">
+              <slot name="title">
+                <h1
+                  v-if="title"
+                  class="hidden text-2xl font-bold text-[var(--foreground)] md:block"
+                >
+                  {{ title }}
+                </h1>
+              </slot>
+              <slot name="description">
+                <p
+                  v-if="description"
+                  class="text-sm text-[var(--muted-foreground)] md:mt-0.5"
+                >
+                  {{ description }}
+                </p>
+              </slot>
+            </div>
+            <div v-else-if="description || $slots.description" class="min-w-0 flex-1">
+              <slot name="description">
+                <p
+                  v-if="description"
+                  class="text-sm text-[var(--muted-foreground)]"
+                >
+                  {{ description }}
+                </p>
+              </slot>
+            </div>
+            <div
+              v-if="$slots.actions"
+              class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center"
+            >
+              <slot name="actions" />
+            </div>
           </div>
         </div>
       </slot>
     </header>
 
-    <!-- Corps uniforme -->
     <div
       :class="[
-        'flex-1',
-        noScroll || flush ? 'overflow-hidden' : 'overflow-y-auto',
-        flush ? '' : 'px-8 py-8',
+        'min-h-0 flex-1',
+        noScroll || flush ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain',
+        flush ? '' : 'px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8',
         noScroll && !flush ? 'flex min-h-0 flex-col' : '',
+        flush || noScroll ? '' : 'pb-4 md:pb-8',
       ]"
     >
-        <div
-          v-if="flush"
-          class="h-full min-h-0"
-        >
-          <slot />
-        </div>
+      <div
+        v-if="flush"
+        class="h-full min-h-0"
+      >
+        <slot />
+      </div>
       <div
         v-else
         :class="[

@@ -106,10 +106,10 @@ const inputClass =
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm"
       @click.self="closeDialog"
     >
-      <div class="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-[var(--card)] shadow-2xl ring-1 ring-[var(--border)]">
+      <div class="relative max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-[var(--card)] pb-[env(safe-area-inset-bottom)] shadow-2xl ring-1 ring-[var(--border)] sm:max-h-[90vh] sm:rounded-2xl sm:pb-0">
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-6 py-4">
           <div>
             <h2 class="text-base font-semibold text-[var(--foreground)]">Modifier le profil</h2>
@@ -125,7 +125,7 @@ const inputClass =
         </div>
 
         <div class="space-y-4 px-6 py-5">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Prénom *</label>
               <input v-model="prenom" type="text" :class="inputClass" />
@@ -136,7 +136,7 @@ const inputClass =
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Naissance (JJ/MM/AAAA) *</label>
               <input v-model="dateNaissance" type="text" placeholder="15/08/2001" :class="inputClass" />
@@ -158,7 +158,7 @@ const inputClass =
 
           <div class="rounded-xl border border-[var(--border)] p-3 space-y-3">
             <p class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Habitude</p>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Type</label>
                 <input v-model="habitudeType" type="text" :class="inputClass" />
@@ -168,7 +168,7 @@ const inputClass =
                 <input v-model="habitudeDebut" type="text" placeholder="09/04/2025" :class="inputClass" />
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Dose</label>
                 <input v-model="habitudeDose" type="number" step="0.1" :class="inputClass" />

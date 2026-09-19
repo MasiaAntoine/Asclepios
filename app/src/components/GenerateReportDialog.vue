@@ -4,9 +4,11 @@ import { useRouter } from 'vue-router'
 import { BrainCircuit, ExternalLink, Loader2, RotateCcw, Sparkles } from '@lucide/vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import { apiFetch } from '@/lib/apiFetch'
+import { useReports } from '@/composables/useReports'
 
 const emit = defineEmits<{
   generated: [reportId: string]
+  view: [reportId: string]
 }>()
 
 const open = ref(false)
@@ -18,6 +20,7 @@ const hasError = ref(false)
 const terminalEl = ref<HTMLDivElement | null>(null)
 
 const router = useRouter()
+const { reload: reloadReports } = useReports()
 
 function reset() {
   text.value = ''
@@ -78,6 +81,7 @@ async function generate() {
         if (line.startsWith('GENERATED:')) {
           generatedId.value = line.slice('GENERATED:'.length).trim()
           emit('generated', generatedId.value)
+          void reloadReports()
         } else if (line === '[DONE]') {
           running.value = false
         } else if (line === '[ERROR]') {
@@ -97,10 +101,15 @@ async function generate() {
 }
 
 function openReport() {
-  if (generatedId.value) {
-    open.value = false
+  if (!generatedId.value) return
+  open.value = false
+  void reloadReports().then(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      emit('view', generatedId.value!)
+      return
+    }
     router.push(`/rapports/${generatedId.value}`)
-  }
+  })
 }
 </script>
 

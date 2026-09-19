@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useMedications } from '@/composables/useMedications'
+import { useMobileSheet } from '@/composables/useMobileSheet'
 import PageShell from '@/components/PageShell.vue'
+import BottomSheet from '@/components/ui/BottomSheet.vue'
+import MedDocView from '@/views/MedDocView.vue'
+import CompactRow from '@/components/CompactRow.vue'
 import { BookOpen, Pill, Search, Sunrise, Sunset } from '@lucide/vue'
 
-const router = useRouter()
 const { list, actifs, arretes, misAJour, loading, error } = useMedications()
+const { itemId, sheetOpen, openItem } = useMobileSheet()
 
 const searchQuery = ref('')
 
@@ -27,7 +30,12 @@ const filteredActifs = computed(() => filtered.value.filter((t) => t.actif))
 const filteredArretes = computed(() => filtered.value.filter((t) => !t.actif))
 
 function openMed(id: string) {
-  router.push(`/meds/${id}`)
+  openItem(id, `/meds/${id}`)
+}
+
+function medSubtitle(t: (typeof list.value)[number]) {
+  const parts = [t.actuel?.dose, t.moment, t.si_besoin ? 'si besoin' : ''].filter(Boolean)
+  return parts.join(' · ')
 }
 
 function momentIcon(moment: string) {
@@ -66,7 +74,7 @@ function momentIcon(moment: string) {
 
       <template v-else>
         <!-- Stats -->
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div class="hidden grid-cols-3 gap-4 md:grid">
           <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
             <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Total</p>
             <p class="mt-1 text-2xl font-bold">{{ list.length }}</p>
@@ -87,10 +95,24 @@ function momentIcon(moment: string) {
 
         <!-- Active -->
         <section v-if="filteredActifs.length">
-          <h2 class="mb-4 text-sm font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+          <h2 class="mb-2 text-[15px] text-[var(--muted-foreground)] md:mb-4 md:text-sm md:font-semibold md:uppercase md:tracking-wider">
             En cours
           </h2>
-          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="space-y-2 md:hidden">
+            <CompactRow
+              v-for="t in filteredActifs"
+              :key="t.id"
+              variant="card"
+              :title="t.nom"
+              :subtitle="medSubtitle(t)"
+              @click="openMed(t.id)"
+            >
+              <template #icon>
+                <Pill :size="20" />
+              </template>
+            </CompactRow>
+          </div>
+          <div class="hidden grid-cols-1 gap-4 md:grid md:grid-cols-2">
             <button
               v-for="t in filteredActifs"
               :key="t.id"
@@ -139,10 +161,24 @@ function momentIcon(moment: string) {
 
         <!-- Stopped -->
         <section v-if="filteredArretes.length">
-          <h2 class="mb-4 text-sm font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+          <h2 class="mb-2 text-[15px] text-[var(--muted-foreground)] md:mb-4 md:text-sm md:font-semibold md:uppercase md:tracking-wider">
             Arrêtés
           </h2>
-          <div class="space-y-2">
+          <div class="space-y-2 md:hidden">
+            <CompactRow
+              v-for="t in filteredArretes"
+              :key="t.id"
+              variant="card"
+              :title="t.nom"
+              :subtitle="t.actuel?.date ? `Arrêté le ${t.actuel.date}` : 'Arrêté'"
+              @click="openMed(t.id)"
+            >
+              <template #icon>
+                <Pill :size="20" />
+              </template>
+            </CompactRow>
+          </div>
+          <div class="hidden space-y-2 md:block">
             <button
               v-for="t in filteredArretes"
               :key="t.id"
@@ -166,4 +202,8 @@ function momentIcon(moment: string) {
       </template>
     </div>
   </PageShell>
+
+  <BottomSheet v-model:open="sheetOpen">
+    <MedDocView v-if="itemId" embedded :item-id="itemId" />
+  </BottomSheet>
 </template>

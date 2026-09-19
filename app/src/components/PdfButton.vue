@@ -67,7 +67,7 @@ async function download() {
   <div class="flex flex-col gap-1">
     <button
       type="button"
-      class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3 py-1.5 text-xs font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/20 disabled:opacity-50"
+      class="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3 py-2.5 text-sm font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/20 disabled:opacity-50"
       :disabled="running"
       @click="download"
     >

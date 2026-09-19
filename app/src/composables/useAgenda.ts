@@ -126,7 +126,6 @@ const error = ref<string | null>(null)
 /** Vrai quand on affiche un snapshot faute d'avoir pu joindre Google. */
 const stale = ref(false)
 const lastSync = ref<string | null>(null)
-let loaded = false
 
 async function fetchStatus() {
   try {
@@ -162,7 +161,6 @@ async function load(refresh = false) {
     stale.value = Boolean(payload.stale)
     lastSync.value = payload.fetched_at ?? null
     if (payload.stale && payload.error) error.value = payload.error
-    loaded = true
   } catch (e) {
     events.value = []
     error.value = e instanceof Error ? e.message : "Impossible de charger l'agenda"
@@ -172,12 +170,6 @@ async function load(refresh = false) {
 }
 
 export function useAgenda() {
-  if (!loaded && !loading.value) {
-    void fetchStatus()
-    void load()
-  }
-
-  /** Index jour → événements, pour la grille du mois. */
   const eventsByDay = computed(() => {
     const map = new Map<string, AgendaEvent[]>()
     for (const event of events.value) {
@@ -223,6 +215,9 @@ export function useAgenda() {
     error,
     stale,
     lastSync,
-    reload: (refresh = true) => load(refresh),
+    reload: async (refresh = true) => {
+      await fetchStatus()
+      await load(refresh)
+    },
   }
 }
