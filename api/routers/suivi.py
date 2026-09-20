@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from datetime import date
 from typing import AsyncGenerator
+import re
+import subprocess
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from api import config
@@ -26,6 +28,11 @@ class TreatmentEntryRequest(BaseModel):
 class PoidsAddRequest(BaseModel):
     date: str
     poids_kg: float
+
+
+class MoodUpsertRequest(BaseModel):
+    date: str
+    score: int
 
 
 class ProfilUpdateRequest(BaseModel):
@@ -118,6 +125,82 @@ async def add_poids_entry(body: PoidsAddRequest):
         yield b"data: [DONE]\n\n"
 
     return sse(stream())
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HUMEUR_HEADER = "date,score"
+
+
+def _push_vault() -> None:
+    try:
+        subprocess.run(
+            [config.PYTHON, str(config.SCRIPT_SYNC), "push"],
+            cwd=str(config.ROOT),
+            check=False,
+            capture_output=True,
+        )
+    except Exception:
+        pass
+
+
+def _load_moods() -> dict[str, int]:
+    path = config.HUMEUR_CSV
+    if not path.exists():
+        return {}
+    rows: dict[str, int] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    for line in lines:
+        raw = line.strip()
+        if not raw or raw.lower().startswith("date"):
+            continue
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) < 2:
+            continue
+        day, score_s = parts[0], parts[1]
+        if not _DATE_RE.match(day):
+            continue
+        try:
+            score = int(score_s)
+        except ValueError:
+            continue
+        if 0 <= score <= 10:
+            rows[day] = score
+    return rows
+
+
+def _save_moods(rows: dict[str, int]) -> None:
+    config.SUIVI_DIR.mkdir(parents=True, exist_ok=True)
+    lines = [_HUMEUR_HEADER]
+    for day in sorted(rows):
+        lines.append(f"{day},{rows[day]}")
+    config.HUMEUR_CSV.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def mood_logged_on(day: str) -> bool:
+    return day in _load_moods()
+
+
+@router.put("/mood")
+def upsert_mood(body: MoodUpsertRequest, background_tasks: BackgroundTasks):
+    if not _DATE_RE.match(body.date):
+        raise HTTPException(status_code=400, detail="Date invalide")
+    try:
+        day = date.fromisoformat(body.date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Date invalide") from None
+    if day > date.today():
+        raise HTTPException(status_code=400, detail="Impossible de noter un jour futur")
+    if body.score < 0 or body.score > 10:
+        raise HTTPException(status_code=400, detail="Score entre 0 et 10")
+    rows = _load_moods()
+    updated = body.date in rows
+    rows[body.date] = body.score
+    _save_moods(rows)
+    background_tasks.add_task(_push_vault)
+    return {"date": body.date, "score": body.score, "updated": updated}
 
 
 @router.post("/profil/update")

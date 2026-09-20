@@ -82,6 +82,11 @@ def build_medical_context(data_dir: Path) -> str:
     if poids.strip():
         add("Poids (CSV)", poids)
 
+    # Humeur quotidienne (0 = au plus bas, 10 = super bien)
+    humeur = _read_text(data_dir / "suivi" / "humeur.csv")
+    if humeur.strip():
+        add("Humeur quotidienne (0–10)", humeur)
+
     # Labs
     labs_cfg = _read_json(data_dir / "suivi" / "labs-config.json")
     if labs_cfg:

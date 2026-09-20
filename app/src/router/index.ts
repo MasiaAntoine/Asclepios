@@ -47,6 +47,11 @@ const router = createRouter({
       component: () => import('@/views/WeightView.vue'),
     },
     {
+      path: '/humeur',
+      name: 'mood',
+      component: () => import('@/views/MoodView.vue'),
+    },
+    {
       path: '/suivi',
       name: 'suivi',
       component: () => import('@/views/SuiviView.vue'),

@@ -7,6 +7,7 @@ import PageShell from '@/components/PageShell.vue'
 import BottomSheet from '@/components/ui/BottomSheet.vue'
 import ReportDetailView from '@/views/ReportDetailView.vue'
 import CompactRow from '@/components/CompactRow.vue'
+import ReportEmotionIcons from '@/components/ReportEmotionIcons.vue'
 import { Calendar, FileText, Search, Tag } from '@lucide/vue'
 
 const { reports, loading, error, reload } = useReports()
@@ -120,18 +121,25 @@ function formatGroupLabel(key: string) {
         </div>
 
         <div class="md:hidden">
-          <CompactRow
+          <div
             v-for="report in groupReports"
             :key="report.id"
-            :title="report.title"
-            :meta="formatShortDate(report.date)"
-            :subtitle="report.tags.slice(0, 2).join(' · ')"
-            @click="openReport(report.id)"
+            class="border-b border-[var(--border)]/60 last:border-0"
           >
-            <template #icon>
-              <FileText :size="20" />
-            </template>
-          </CompactRow>
+            <CompactRow
+              :title="report.title"
+              :meta="formatShortDate(report.date)"
+              :subtitle="report.tags.slice(0, 2).join(' · ')"
+              @click="openReport(report.id)"
+            >
+              <template #icon>
+                <FileText :size="20" />
+              </template>
+            </CompactRow>
+            <div class="pb-2.5 pl-11">
+              <ReportEmotionIcons :report-id="report.id" :size="26" />
+            </div>
+          </div>
         </div>
 
         <div class="hidden grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 md:grid">
@@ -163,6 +171,9 @@ function formatGroupLabel(key: string) {
                 <Tag :size="9" />
                 {{ tag }}
               </span>
+            </div>
+            <div class="mt-3" @click.stop>
+              <ReportEmotionIcons :report-id="report.id" :size="28" />
             </div>
           </button>
         </div>

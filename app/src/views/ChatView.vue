@@ -29,6 +29,8 @@ import EditProposal from "@/components/EditProposal.vue";
 import DeleteConversationDialog from "@/components/DeleteConversationDialog.vue";
 import { apiFetch } from '@/lib/apiFetch'
 import { useReports } from '@/composables/useReports'
+import { promptReportEmotions } from '@/composables/useEmotionPrompt'
+import { useReportEmotions } from '@/composables/useReportEmotions'
 
 interface EditProposalData {
   path: string;
@@ -67,6 +69,7 @@ const router = useRouter();
 const route = useRoute();
 const { photoUrl } = useProfile();
 const { reload: reloadReports } = useReports();
+const { isEvaluated } = useReportEmotions();
 const { itemId: reportSheetId, sheetOpen: reportSheetOpen, openItem: openReportSheet } = useMobileSheet();
 const userPhotoFailed = ref(false);
 
@@ -424,6 +427,7 @@ async function generateReport() {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let generatedId: string | null = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -440,6 +444,7 @@ async function generateReport() {
         }
         if (line.startsWith("REPORT:")) {
           const rid = line.slice("REPORT:".length);
+          generatedId = rid;
           activeReportId.value = rid;
           if (activeId.value)
             upsertConversationMeta(activeId.value, undefined, rid);
@@ -454,6 +459,9 @@ async function generateReport() {
       }
     }
     await loadConversations();
+    if (generatedId && !error.value) {
+      window.setTimeout(() => promptReportEmotions(generatedId!), 400);
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Erreur génération rapport";
   } finally {
@@ -491,6 +499,7 @@ async function send() {
   markFresh(userMsg.id);
 
   const assistantId = `a-${Date.now()}`;
+  let aborted = false;
   // `created_at` est posé à la fin du stream, comme côté serveur : l'heure
   // affichée reste donc la même après un rechargement de la conversation.
   messages.value.push({
@@ -618,6 +627,8 @@ async function send() {
       const msg = messages.value.find((m) => m.id === assistantId);
       if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
       if (msg) msg.created_at = new Date().toISOString();
+    } else {
+      aborted = true;
     }
   } finally {
     running.value = false;
@@ -632,6 +643,15 @@ async function send() {
     } else {
       flushReveal();
       streamingId.value = null;
+    }
+    if (
+      !aborted &&
+      !error.value &&
+      done?.content &&
+      activeReportId.value &&
+      !isEvaluated(activeReportId.value)
+    ) {
+      promptReportEmotions(activeReportId.value, { force: false });
     }
   }
 }

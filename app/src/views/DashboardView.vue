@@ -9,7 +9,10 @@ import OrdonnancesDetailView from '@/views/OrdonnancesDetailView.vue'
 import PriseDeSangDetailView from '@/views/PriseDeSangDetailView.vue'
 import { useProfile } from '@/composables/useProfile'
 import { useReports } from '@/composables/useReports'
+import { useReportEmotions } from '@/composables/useReportEmotions'
+import { promptReportEmotions } from '@/composables/useEmotionPrompt'
 import { usePoids } from '@/composables/usePoids'
+import { useMood } from '@/composables/useMood'
 import { useLabs } from '@/composables/useLabs'
 import { useMedications } from '@/composables/useMedications'
 import { useMedicationSeries } from '@/composables/useMedicationSeries'
@@ -31,6 +34,10 @@ import {
   TrendingUp,
   UserRound,
 } from '@lucide/vue'
+import OwlEmotionIcon from '@/components/OwlEmotionIcon.vue'
+import ReportEmotionIcons from '@/components/ReportEmotionIcons.vue'
+import { EMOTIONS } from '@/lib/emotions'
+import { moodLabel, moodOwl } from '@/lib/mood'
 
 const router = useRouter()
 const { itemId, sheetOpen, openItem } = useMobileSheet()
@@ -52,7 +59,9 @@ const {
 } = useProfile()
 
 const { reports, loading: reportsLoading } = useReports()
+const { isEvaluated } = useReportEmotions()
 const { dernier, delta, deltaRecent, loading: poidsLoading } = usePoids()
+const { today: moodToday, moyenne7j: moodMoyenne, missingDays: moodMissing } = useMood()
 const {
   config: labsConfig,
   latestPrimary,
@@ -106,6 +115,10 @@ const greeting = computed(() => {
 const recentReports = computed(() => reports.value.slice(0, 3))
 const recentOrdonnances = computed(() => ordonnances.value.slice(0, 3))
 const recentLabs = computed(() => labPdfs.value.slice(0, 3))
+
+const pendingEmotionReports = computed(() =>
+  reports.value.filter((r) => !isEvaluated(r.id)),
+)
 
 function formatReportDate(dateStr: string) {
   if (!dateStr) return ''
@@ -172,8 +185,97 @@ function go(path: string) {
         </div>
       </div>
 
+      <section
+        v-if="pendingEmotionReports.length"
+        class="overflow-hidden rounded-2xl border border-[var(--primary)]/25 bg-[var(--card)] shadow-sm"
+      >
+        <div class="px-4 py-4 sm:px-5">
+          <div class="mb-3 flex flex-wrap gap-1">
+            <OwlEmotionIcon
+              v-for="emotion in EMOTIONS"
+              :key="emotion.id"
+              :emotion="emotion.id"
+              :size="30"
+            />
+          </div>
+          <p class="text-sm font-semibold text-[var(--foreground)]">
+            {{ pendingEmotionReports.length }}
+            rapport{{ pendingEmotionReports.length > 1 ? 's' : '' }}
+            en attente d’évaluation d’émotion
+          </p>
+          <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
+            Associe ce que tu ressentais au moment du rapport.
+          </p>
+        </div>
+        <ul class="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+          <li
+            v-for="r in pendingEmotionReports.slice(0, 5)"
+            :key="r.id"
+          >
+            <button
+              type="button"
+              class="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-[var(--accent)]/40 sm:px-5"
+              @click="promptReportEmotions(r.id)"
+            >
+              <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ r.title }}</span>
+              <span class="shrink-0 text-[11px] text-[var(--muted-foreground)]">Évaluer</span>
+            </button>
+          </li>
+        </ul>
+        <p
+          v-if="pendingEmotionReports.length > 5"
+          class="px-4 py-2 text-xs text-[var(--muted-foreground)] sm:px-5"
+        >
+          + {{ pendingEmotionReports.length - 5 }} autre{{ pendingEmotionReports.length - 5 > 1 ? 's' : '' }}
+        </p>
+      </section>
+
+      <section
+        v-if="!moodToday"
+        class="flex items-center gap-3 rounded-2xl border border-[var(--primary)]/25 bg-[var(--card)] px-4 py-3.5 shadow-sm"
+      >
+        <OwlEmotionIcon emotion="calme" :size="40" />
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-[var(--foreground)]">Humeur du jour</p>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            Pas encore notée — 0 au plus bas, 10 super bien.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-medium text-[var(--primary-foreground)]"
+          @click="go('/humeur')"
+        >
+          Noter
+        </button>
+      </section>
+
       <!-- KPIs -->
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+        <button
+          type="button"
+          class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--primary)]/40 hover:bg-[var(--accent)]/40"
+          @click="go('/humeur')"
+        >
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Humeur</p>
+          <p class="mt-1 flex items-center gap-2 text-2xl font-bold tabular-nums">
+            <OwlEmotionIcon
+              :emotion="moodOwl(moodToday?.score ?? 5)"
+              :active="moodToday != null"
+              :size="28"
+            />
+            <template v-if="moodToday">{{ moodToday.score }}</template>
+            <template v-else>—</template>
+            <span class="text-sm font-medium text-[var(--muted-foreground)]">/10</span>
+          </p>
+          <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+            <template v-if="moodToday">{{ moodLabel(moodToday.score) }}</template>
+            <template v-else-if="moodMissing.length">{{ moodMissing.length }} j. en attente</template>
+            <template v-else-if="moodMoyenne != null">7 j. : {{ moodMoyenne }}</template>
+            <template v-else>Pas encore notée</template>
+          </p>
+        </button>
+
         <button
           type="button"
           class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--primary)]/40 hover:bg-[var(--accent)]/40"
@@ -436,6 +538,9 @@ function go(path: string) {
               >
                 <span class="truncate text-sm font-medium text-[var(--foreground)]">{{ r.title }}</span>
                 <span class="text-[11px] text-[var(--muted-foreground)]">{{ formatReportDate(r.date) }}</span>
+                <div class="mt-1" @click.stop>
+                  <ReportEmotionIcons :report-id="r.id" :size="22" />
+                </div>
               </button>
             </li>
           </ul>

@@ -26,7 +26,7 @@ router = APIRouter(tags=["chats"])
 _BEHAVIOR_PROFILE = ConversationBehaviorProfile(config.VAULT_DIR)
 
 _MEDICAL_SYSTEM = """Tu es Asclepios, l'assistant IA du dossier médical personnel de l'utilisateur.
-Tu as accès au contexte fourni (profil, poids, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
+Tu as accès au contexte fourni (profil, poids, humeur quotidienne 0–10, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
 ET à l'historique COMPLET de cette conversation.
 Tu travailles avec le répertoire vault/ comme répertoire de travail : tu PEUX ouvrir les fichiers images (jpg/png) listés dans le contexte.
 

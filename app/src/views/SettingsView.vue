@@ -5,6 +5,7 @@ import { useSseStream } from '@/composables/usePdfApi'
 import { useAuth } from '@/composables/useAuth'
 import PageShell from '@/components/PageShell.vue'
 import {
+  Bell,
   Cloud,
   CloudDownload,
   CloudUpload,
@@ -16,6 +17,7 @@ import {
   X,
 } from '@lucide/vue'
 import { apiFetch } from '@/lib/apiFetch'
+import { usePushSubscription } from '@/composables/usePushSubscription'
 
 interface SettingsStatus {
   cursor_api_configured: boolean
@@ -36,6 +38,34 @@ interface SettingsStatus {
 
 const router = useRouter()
 const { logout } = useAuth()
+const {
+  kind: pushKind,
+  loading: pushLoading,
+  error: pushError,
+  enablePush,
+  sendTestPush,
+  syncPushSubscription,
+} = usePushSubscription()
+
+const pushTestBusy = ref(false)
+const pushTestMsg = ref<string | null>(null)
+
+const pushLabel = computed(() => {
+  switch (pushKind.value) {
+    case 'subscribed':
+      return 'Activées sur cet appareil'
+    case 'needs-home':
+      return 'Ajoute Asclepios à l’écran d’accueil (iOS)'
+    case 'denied':
+      return 'Bloquées par le navigateur'
+    case 'unsupported':
+      return 'Non disponibles sur ce navigateur'
+    case 'error':
+      return pushError.value || 'Erreur'
+    default:
+      return 'Pas encore activées'
+  }
+})
 
 const status = ref<SettingsStatus | null>(null)
 const statusError = ref<string | null>(null)
@@ -122,7 +152,26 @@ const monthlyCostLabel = computed(() => {
 
 onMounted(() => {
   void loadStatus()
+  void syncPushSubscription()
 })
+
+async function onEnablePush() {
+  pushTestMsg.value = null
+  await enablePush()
+}
+
+async function onTestPush() {
+  pushTestBusy.value = true
+  pushTestMsg.value = null
+  try {
+    await sendTestPush()
+    pushTestMsg.value = 'Notification envoyée. Ferme l’app pour la voir si elle est au premier plan.'
+  } catch (e) {
+    pushTestMsg.value = e instanceof Error ? e.message : 'Échec du test'
+  } finally {
+    pushTestBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -236,6 +285,42 @@ onMounted(() => {
             Annuler
           </button>
         </div>
+      </section>
+
+      <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+        <div class="mb-4 flex items-center gap-2">
+          <Bell :size="16" class="text-[var(--primary)]" />
+          <h2 class="text-sm font-semibold text-[var(--foreground)]">Notifications</h2>
+        </div>
+        <p class="mb-1 text-sm font-medium text-[var(--foreground)]">{{ pushLabel }}</p>
+        <p class="mb-4 text-xs text-[var(--muted-foreground)]">
+          Web Push via le navigateur. Rappel 1&nbsp;h avant un rendez-vous de l’agenda médical.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-if="pushKind !== 'subscribed' && pushKind !== 'unsupported'"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-[var(--primary-foreground)] disabled:opacity-50"
+            :disabled="pushLoading || pushKind === 'needs-home' || pushKind === 'denied'"
+            @click="onEnablePush"
+          >
+            <Loader v-if="pushLoading" :size="15" class="animate-spin" />
+            <Bell v-else :size="15" />
+            Activer
+          </button>
+          <button
+            v-if="pushKind === 'subscribed'"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--accent)] disabled:opacity-50"
+            :disabled="pushTestBusy"
+            @click="onTestPush"
+          >
+            <Loader v-if="pushTestBusy" :size="15" class="animate-spin" />
+            Envoyer un test
+          </button>
+        </div>
+        <p v-if="pushTestMsg" class="mt-3 text-xs text-[var(--muted-foreground)]">{{ pushTestMsg }}</p>
+        <p v-if="pushError && pushKind === 'error'" class="mt-3 text-xs text-red-600">{{ pushError }}</p>
       </section>
 
       <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,6 +18,7 @@ from api.routers import (
     medications,
     ordonnances,
     pdf,
+    push,
     reports,
     settings,
     suivi,
@@ -29,6 +33,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await auth.auth_middleware(request, call_next)
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    from api.push_reminders import reminder_loop
+
+    task = asyncio.create_task(reminder_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 def create_app() -> FastAPI:
     openapi_url = None if config.ASCLEPIOS_ENV == "production" else "/openapi.json"
     app = FastAPI(
@@ -37,6 +56,7 @@ def create_app() -> FastAPI:
         docs_url=None,
         redoc_url=None,
         openapi_url=openapi_url,
+        lifespan=lifespan,
     )
     # Ordre d'ajout : le dernier est le plus externe (s'exécute en premier).
     app.add_middleware(AuthMiddleware)
@@ -62,6 +82,7 @@ def create_app() -> FastAPI:
         reports,
         vault_edits,
         chats,
+        push,
     ):
         app.include_router(module.router)
     return app

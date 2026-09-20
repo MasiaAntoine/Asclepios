@@ -42,6 +42,7 @@ RAPPORT_TEMPLATE_PATH = ASSISTANT_DIR / "rapport-template.md"
 
 SUIVI_DIR = VAULT_DIR / "suivi"
 POIDS_CSV = SUIVI_DIR / "poids.csv"
+HUMEUR_CSV = SUIVI_DIR / "humeur.csv"
 LABS_CSV = SUIVI_DIR / "labs.csv"
 TRAITEMENTS_PATH = SUIVI_DIR / "traitements.json"
 LABS_CONFIG_PATH = SUIVI_DIR / "labs-config.json"
@@ -58,12 +59,15 @@ HUMAINS_DIR = VAULT_DIR / "humains"
 PERSONNES_DIR = HUMAINS_DIR / "personnes"
 RELATIONS_DIR = HUMAINS_DIR / "relations"
 RAPPORTS_DIR = VAULT_DIR / "rapports"
+RAPPORTS_EMOTIONS_PATH = RAPPORTS_DIR / "emotions.json"
 RECITS_DIR = VAULT_DIR / "recits"
 PDS_DIR = VAULT_DIR / "prise-de-sang"
 CHATS_DIR = ASSISTANT_DIR / "chats"
 FONTS_DIR = VAULT_DIR / "fonts"
 CACHE_DIR = VAULT_DIR / "cache"
 AGENDA_CACHE_PATH = CACHE_DIR / "agenda.json"
+PUSH_SUBSCRIPTIONS_PATH = CACHE_DIR / "push-subscriptions.json"
+PUSH_SENT_PATH = CACHE_DIR / "push-sent.json"
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 APP_VERSION = "0.1.0"
@@ -85,6 +89,18 @@ CORS_ORIGINS = [
     ).split(",")
     if o.strip()
 ]
+
+
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip().strip("'").strip('"')
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip().strip("'").strip('"')
+VAPID_SUBJECT = (
+    os.getenv("VAPID_SUBJECT", "https://asclepios.masia-antoine.fr").strip().strip("'").strip('"')
+    or "https://asclepios.masia-antoine.fr"
+)
+
+
+def vapid_is_configured() -> bool:
+    return bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)
 
 
 def totp_account_name() -> str:

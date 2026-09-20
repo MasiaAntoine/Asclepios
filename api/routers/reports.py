@@ -4,16 +4,111 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from datetime import date
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from api import config
-from api.deps import get_rapport_template, slugify, sse, stream_cmd
+from api.deps import dump_json, get_rapport_template, load_json, slugify, sse, stream_cmd
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
+
+ALLOWED_EMOTIONS = (
+    "joie",
+    "tristesse",
+    "anxiete",
+    "colere",
+    "calme",
+    "espoir",
+    "fatigue",
+    "soulagement",
+)
+
+
+class ReportEmotionsBody(BaseModel):
+    emotions: list[str]
+
+
+def _safe_report_id(report_id: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_\-]", "", report_id)
+    if not safe:
+        raise HTTPException(status_code=400, detail="Identifiant invalide")
+    return safe
+
+
+def _load_emotions() -> dict[str, list[str]]:
+    path = config.RAPPORTS_EMOTIONS_PATH
+    if not path.exists():
+        return {}
+    try:
+        data = load_json(path)
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for key, value in data.items():
+        if not isinstance(key, str):
+            continue
+        ids = value
+        if isinstance(value, dict):
+            ids = value.get("emotions") or value.get("ids")
+        if not isinstance(ids, list):
+            continue
+        out[key] = [e for e in ALLOWED_EMOTIONS if e in ids]
+    return out
+
+
+def _normalize_emotions(ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for emotion in ALLOWED_EMOTIONS:
+        if emotion in ids and emotion not in seen:
+            seen.add(emotion)
+            out.append(emotion)
+    return out
+
+
+def _push_vault() -> None:
+    try:
+        subprocess.run(
+            [config.PYTHON, str(config.SCRIPT_SYNC), "push"],
+            cwd=str(config.ROOT),
+            check=False,
+            capture_output=True,
+        )
+    except Exception:
+        pass
+
+
+@router.get("/emotions")
+def get_emotions():
+    return _load_emotions()
+
+
+@router.put("/{report_id}/emotions")
+def put_report_emotions(
+    report_id: str,
+    body: ReportEmotionsBody,
+    background_tasks: BackgroundTasks,
+):
+    safe = _safe_report_id(report_id)
+    md = config.RAPPORTS_DIR / f"{safe}.md"
+    if not md.is_file():
+        raise HTTPException(status_code=404, detail="Rapport introuvable")
+    emotions = _normalize_emotions(body.emotions)
+    data = _load_emotions()
+    if emotions:
+        data[safe] = emotions
+    else:
+        data.pop(safe, None)
+    config.RAPPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    dump_json(config.RAPPORTS_EMOTIONS_PATH, data)
+    background_tasks.add_task(_push_vault)
+    return {"id": safe, "emotions": emotions}
 
 
 async def call_ai(text: str) -> str:

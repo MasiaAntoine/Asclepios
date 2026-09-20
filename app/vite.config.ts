@@ -19,6 +19,7 @@ export default defineConfig({
         'pwa-192x192.png',
         'pwa-512x512.png',
         'pwa-maskable-512x512.png',
+        'push-sw.js',
       ],
       manifest: {
         name: 'Asclepios',
@@ -64,10 +65,10 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
         ],
+        importScripts: ['push-sw.js'],
       },
       devOptions: {
         enabled: true,
-        type: 'module',
       },
     }),
   ],

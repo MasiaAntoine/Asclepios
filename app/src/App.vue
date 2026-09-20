@@ -2,6 +2,9 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
+import EmotionPromptDialog from '@/components/EmotionPromptDialog.vue'
+import PushPermissionDialog from '@/components/PushPermissionDialog.vue'
+import MoodPromptDialog from '@/components/MoodPromptDialog.vue'
 import { useAuth } from '@/composables/useAuth'
 
 const route = useRoute()
@@ -35,5 +38,8 @@ const showApp = computed(() => checked.value && authenticated.value && !isLogin.
     >
       <RouterView />
     </main>
+    <EmotionPromptDialog />
+    <PushPermissionDialog />
+    <MoodPromptDialog />
   </div>
 </template>

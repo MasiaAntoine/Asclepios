@@ -14,6 +14,7 @@ import { useDoctors, doctorFullName, doctorPhotoUrl, type Doctor } from '@/compo
 import { parseEventDate, formatTime, type AgendaEvent } from '@/composables/useAgenda'
 import { apiFetch } from '@/lib/apiFetch'
 import { useReports } from '@/composables/useReports'
+import { promptReportEmotions } from '@/composables/useEmotionPrompt'
 
 const props = defineProps<{
   initialDoctorId?: string | null
@@ -202,9 +203,12 @@ async function generate() {
         const line = part.replace(/^data:\s?/, '').trim()
         if (!line) continue
         if (line.startsWith('GENERATED:')) {
-          generatedId.value = line.slice('GENERATED:'.length).trim()
-          emit('generated', generatedId.value)
+          const id = line.slice('GENERATED:'.length).trim()
+          generatedId.value = id
+          emit('generated', id)
           void reloadReports()
+          open.value = false
+          window.setTimeout(() => promptReportEmotions(id), 250)
         } else if (line === '[DONE]') {
           running.value = false
         } else if (line === '[ERROR]') {

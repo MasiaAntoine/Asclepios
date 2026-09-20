@@ -6,6 +6,9 @@ import { useReports } from '@/composables/useReports'
 import { ArrowLeft, Calendar, FileText, List, Tag } from '@lucide/vue'
 import PdfButton from '@/components/PdfButton.vue'
 import PageShell from '@/components/PageShell.vue'
+import EmotionPicker from '@/components/EmotionPicker.vue'
+import { useReportEmotions } from '@/composables/useReportEmotions'
+import type { EmotionId } from '@/lib/emotions'
 
 interface TocItem {
   id: string
@@ -24,6 +27,7 @@ const props = withDefaults(
 const route = useRoute()
 const router = useRouter()
 const { getReport, getReportSync, loading: reportsLoading } = useReports()
+const { emotionsOf, saveEmotions, byId } = useReportEmotions()
 
 const reportId = computed(() => {
   const raw = props.itemId || (route.params.slug as string) || ''
@@ -32,6 +36,30 @@ const reportId = computed(() => {
 
 const report = ref<Awaited<ReturnType<typeof getReport>>>(undefined)
 const reportLoading = ref(false)
+const pickedEmotions = ref<EmotionId[]>([])
+
+function syncPickedEmotions(id: string) {
+  pickedEmotions.value = [...emotionsOf(id)]
+}
+
+watch(
+  [reportId, byId],
+  () => {
+    if (reportId.value) syncPickedEmotions(reportId.value)
+  },
+  { immediate: true, deep: true },
+)
+
+async function onEmotionsChange(ids: EmotionId[]) {
+  if (!reportId.value) return
+  const current = emotionsOf(reportId.value)
+  if (JSON.stringify(ids) === JSON.stringify(current)) return
+  try {
+    await saveEmotions(reportId.value, ids)
+  } catch {
+    syncPickedEmotions(reportId.value)
+  }
+}
 
 async function loadReport(id: string) {
   reportLoading.value = true
@@ -304,6 +332,16 @@ onUnmounted(() => {
           label="Télécharger le PDF"
         />
       </div>
+      <div class="mt-4">
+        <p class="mb-2 text-xs font-medium text-[var(--muted-foreground)]">
+          Émotions au moment du rapport
+        </p>
+        <EmotionPicker
+          v-model:selected="pickedEmotions"
+          :size="48"
+          @update:selected="onEmotionsChange"
+        />
+      </div>
     </div>
 
     <!-- Loading -->
@@ -334,6 +372,16 @@ onUnmounted(() => {
       <div class="flex gap-10">
         <!-- Article -->
         <div class="min-w-0 flex-1">
+          <div v-if="!embedded" class="mb-6 max-w-lg">
+            <p class="mb-2 text-xs font-medium text-[var(--muted-foreground)]">
+              Émotions au moment du rapport
+            </p>
+            <EmotionPicker
+              v-model:selected="pickedEmotions"
+              :size="48"
+              @update:selected="onEmotionsChange"
+            />
+          </div>
           <div v-if="report.tags.length" class="mb-6 flex flex-wrap gap-2">
             <span
               v-for="tag in report.tags"

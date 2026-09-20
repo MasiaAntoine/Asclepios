@@ -5,12 +5,14 @@ export const VAULT = {
   photo: 'identite/profil.png',
   signature: 'identite/signature.png',
   poids: 'suivi/poids.csv',
+  humeur: 'suivi/humeur.csv',
   labs: 'suivi/labs.csv',
   labsConfig: 'suivi/labs-config.json',
   traitements: 'suivi/traitements.json',
   medicationConfig: 'suivi/medication-config.json',
   doctors: 'humains/medecins/doctors.json',
   rapportsIndex: 'rapports/index.json',
+  rapportsEmotions: 'rapports/emotions.json',
 } as const
 
 export function rapportFile(file: string): string {

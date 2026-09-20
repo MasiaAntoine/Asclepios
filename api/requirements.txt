@@ -16,3 +16,4 @@ argon2-cffi
 itsdangerous
 pyotp
 qrcode
+pywebpush
