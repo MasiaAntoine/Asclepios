@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
-from typing import AsyncGenerator
+from datetime import date, datetime, timedelta
+from typing import Any, AsyncGenerator
 import re
 import subprocess
 
@@ -31,8 +31,9 @@ class PoidsAddRequest(BaseModel):
 
 
 class MoodUpsertRequest(BaseModel):
-    date: str
     score: int
+    at: str | None = None
+    replace_at: str | None = None
 
 
 class ProfilUpdateRequest(BaseModel):
@@ -45,6 +46,7 @@ class ProfilUpdateRequest(BaseModel):
     habitude_debut: str = ""
     habitude_dose: float | None = None
     habitude_note: str = ""
+    sport_notify_at: str | None = None
 
 
 @router.post("/treatment/add-entry")
@@ -128,7 +130,7 @@ async def add_poids_entry(body: PoidsAddRequest):
 
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_HUMEUR_HEADER = "date,score"
+_HUMEUR_HEADER = "at,score"
 
 
 def _push_vault() -> None:
@@ -143,64 +145,118 @@ def _push_vault() -> None:
         pass
 
 
-def _load_moods() -> dict[str, int]:
+def _parse_mood_at(raw: str) -> datetime | None:
+    from api.mood_slots import PARIS
+
+    value = (raw or "").strip()
+    if not value:
+        return None
+    if _DATE_RE.match(value):
+        try:
+            day = date.fromisoformat(value)
+        except ValueError:
+            return None
+        return datetime(day.year, day.month, day.day, 20, 30, tzinfo=PARIS)
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=PARIS)
+    return dt.astimezone(PARIS)
+
+
+def _fmt_mood_at(dt: datetime) -> str:
+    return dt.isoformat(timespec="minutes")
+
+
+def load_mood_entries() -> list[dict[str, Any]]:
     path = config.HUMEUR_CSV
     if not path.exists():
-        return {}
-    rows: dict[str, int] = {}
+        return []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return {}
+        return []
+    out: list[dict[str, Any]] = []
     for line in lines:
         raw = line.strip()
-        if not raw or raw.lower().startswith("date"):
+        if not raw or raw.lower().startswith("date") or raw.lower().startswith("at"):
             continue
         parts = [p.strip() for p in raw.split(",")]
         if len(parts) < 2:
             continue
-        day, score_s = parts[0], parts[1]
-        if not _DATE_RE.match(day):
-            continue
+        dt = _parse_mood_at(parts[0])
         try:
-            score = int(score_s)
+            score = int(parts[1])
         except ValueError:
             continue
-        if 0 <= score <= 10:
-            rows[day] = score
-    return rows
+        if dt is None or score < 0 or score > 10:
+            continue
+        out.append({"at": _fmt_mood_at(dt), "score": score, "dt": dt})
+    out.sort(key=lambda row: row["dt"])
+    return out
 
 
-def _save_moods(rows: dict[str, int]) -> None:
+def _save_moods(rows: list[dict[str, Any]]) -> None:
     config.SUIVI_DIR.mkdir(parents=True, exist_ok=True)
     lines = [_HUMEUR_HEADER]
-    for day in sorted(rows):
-        lines.append(f"{day},{rows[day]}")
+    for row in sorted(rows, key=lambda r: r["dt"]):
+        lines.append(f"{_fmt_mood_at(row['dt'])},{row['score']}")
     config.HUMEUR_CSV.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def mood_logged_on(day: str) -> bool:
-    return day in _load_moods()
+def mood_slot_filled(day: str, slot_id: str) -> bool:
+    from api.mood_slots import slot_at
+
+    for row in load_mood_entries():
+        dt: datetime = row["dt"]
+        if dt.date().isoformat() != day:
+            continue
+        if slot_at(dt) == slot_id:
+            return True
+    return False
+
+
+def last_mood_at() -> datetime | None:
+    rows = load_mood_entries()
+    if not rows:
+        return None
+    return rows[-1]["dt"]
 
 
 @router.put("/mood")
 def upsert_mood(body: MoodUpsertRequest, background_tasks: BackgroundTasks):
-    if not _DATE_RE.match(body.date):
-        raise HTTPException(status_code=400, detail="Date invalide")
-    try:
-        day = date.fromisoformat(body.date)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Date invalide") from None
-    if day > date.today():
-        raise HTTPException(status_code=400, detail="Impossible de noter un jour futur")
+    from api.mood_slots import PARIS
+
     if body.score < 0 or body.score > 10:
         raise HTTPException(status_code=400, detail="Score entre 0 et 10")
-    rows = _load_moods()
-    updated = body.date in rows
-    rows[body.date] = body.score
+
+    now = datetime.now(PARIS)
+    dt = _parse_mood_at(body.at) if body.at else now
+    if dt is None:
+        raise HTTPException(status_code=400, detail="Horodatage invalide")
+    if dt > now + timedelta(minutes=5):
+        raise HTTPException(status_code=400, detail="Impossible de noter un horaire futur")
+
+    rows = load_mood_entries()
+    replace_dt = _parse_mood_at(body.replace_at) if body.replace_at else None
+    if body.replace_at and replace_dt is None:
+        raise HTTPException(status_code=400, detail="Note à modifier introuvable")
+    replace_key = _fmt_mood_at(replace_dt) if replace_dt else None
+
+    if replace_key:
+        kept = [row for row in rows if row["at"] != replace_key]
+        if len(kept) == len(rows):
+            raise HTTPException(status_code=404, detail="Note à modifier introuvable")
+        rows = kept
+
+    new_at = _fmt_mood_at(dt)
+    rows = [row for row in rows if row["at"] != new_at]
+    rows.append({"at": new_at, "score": body.score, "dt": dt})
     _save_moods(rows)
     background_tasks.add_task(_push_vault)
-    return {"date": body.date, "score": body.score, "updated": updated}
+    return {"at": new_at, "score": body.score}
 
 
 @router.post("/profil/update")
@@ -225,6 +281,19 @@ async def update_profil(body: ProfilUpdateRequest):
             if body.habitude_note.strip():
                 habitude["note"] = body.habitude_note.strip()
             data["habitude"] = habitude
+            if body.sport_notify_at is not None:
+                from api.sport import parse_notify_at
+
+                raw = body.sport_notify_at.strip()
+                parsed = parse_notify_at(raw)
+                if raw and parsed is None:
+                    yield "data: \u2717 Horaire sport invalide (HH:MM)\n\n".encode()
+                    yield b"data: [ERROR]\n\n"
+                    return
+                if parsed:
+                    data["sport_notify_at"] = parsed
+                else:
+                    data.pop("sport_notify_at", None)
             dump_json(path, data)
             yield "data: \u2713 Profil mis à jour\n\n".encode()
         except Exception as exc:

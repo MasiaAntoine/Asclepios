@@ -26,7 +26,7 @@ router = APIRouter(tags=["chats"])
 _BEHAVIOR_PROFILE = ConversationBehaviorProfile(config.VAULT_DIR)
 
 _MEDICAL_SYSTEM = """Tu es Asclepios, l'assistant IA du dossier médical personnel de l'utilisateur.
-Tu as accès au contexte fourni (profil, poids, humeur quotidienne 0–10, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
+Tu as accès au contexte fourni (profil, poids, humeur 0–10 horodatée, programme sport et séances, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
 ET à l'historique COMPLET de cette conversation.
 Tu travailles avec le répertoire vault/ comme répertoire de travail : tu PEUX ouvrir les fichiers images (jpg/png) listés dans le contexte.
 
@@ -75,6 +75,19 @@ STYLE :
   la partie concernée. Le reste du profil reste actif.
 """
 
+_CHECKIN_SYSTEM = """
+CHECK-IN DANS LE MOMENT :
+- Cette conversation est un check-in spontané, pas une revue de dossier.
+- Objectif : évaluer précisément l'état actuel (corps, énergie, humeur, rumination, ce qui se passe autour).
+- Pose des questions concrètes, ancrées dans l'instant — pas « comment s'est passée ta semaine ».
+- 1 à 3 questions max par message. Pas de liste à puces d'interrogatoire.
+- Appuie-toi sur le contexte (humeur récente, sport, traitements, heure) pour personnaliser, sans le réciter.
+- Ton : vivant, direct, allié qui débarque. Tu tutoies.
+- Pas de diagnostic, pas de leçon, pas de « je suis une notification ».
+- Quand tu as assez d'éléments : un court miroir de ce que tu perçois, puis une question suivante.
+- Si l'utilisateur élude, recentre doucement sur le ressenti présent.
+"""
+
 _HISTORY_BUDGET = 100_000
 
 _VISION_HINTS = (
@@ -85,8 +98,9 @@ _VISION_HINTS = (
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = ""
     conversation_id: str | None = None
+    checkin: bool = False
 
 
 def _title_from_message(text: str) -> str:
@@ -137,23 +151,45 @@ def _format_history_block(history: list[dict]) -> str:
     return "\n\n".join(head) + note + "\n\n".join(tail)
 
 
-def _build_chat_prompt(message: str, history: list[dict], context: str) -> str:
+def _build_chat_prompt(
+    message: str,
+    history: list[dict],
+    context: str,
+    *,
+    kind: str | None = None,
+    opening: bool = False,
+) -> str:
     history_block = _format_history_block(history)
-    behavior = _BEHAVIOR_PROFILE.build(message)
+    behavior = _BEHAVIOR_PROFILE.build(message or "check-in")
     profile_section = f"{behavior.profile_block}\n\n" if behavior.profile_block else ""
+    checkin_block = f"{_CHECKIN_SYSTEM}\n" if kind == "checkin" or opening else ""
+    if opening:
+        user_part = (
+            "L'utilisateur vient d'ouvrir le chat depuis une notification. "
+            "Il n'a encore rien écrit.\n\n"
+            "Ouvre TOI-MÊME le check-in : 2 à 4 phrases maximum, puis 2 questions "
+            "précises sur l'instant (corps, clarté mentale, ce qu'il était en train "
+            "de faire, tension, énergie). Adapte à l'heure et au contexte récent. "
+            "Ne mentionne pas la notification. Ne commence pas par un résumé médical."
+        )
+    else:
+        user_part = (
+            "Nouvelle question de l'utilisateur (à traiter en continuité avec l'historique ci-dessus) :\n"
+            f"{message.strip()}\n\n"
+            "Réponds maintenant en tant qu'Asclepios (sans préfixe « Asclepios: »). "
+            f"{behavior.reminder_line}"
+        )
     return (
         f"{profile_section}"
         f"{_MEDICAL_SYSTEM}\n\n"
+        f"{checkin_block}"
         f"{behavior.hint_block}\n\n"
         f"===== CONTEXTE MÉDICAL =====\n{context}\n"
         f"===== FIN CONTEXTE =====\n\n"
         f"===== HISTORIQUE COMPLET DE CETTE CONVERSATION =====\n"
         f"{history_block}\n"
         f"===== FIN HISTORIQUE =====\n\n"
-        f"Nouvelle question de l'utilisateur (à traiter en continuité avec l'historique ci-dessus) :\n"
-        f"{message.strip()}\n\n"
-        "Réponds maintenant en tant qu'Asclepios (sans préfixe « Asclepios: »). "
-        f"{behavior.reminder_line}"
+        f"{user_part}"
     )
 
 
@@ -345,6 +381,26 @@ def _new_chat_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
 
 
+def get_or_create_today_checkin() -> dict:
+    from api.checkin import find_today_checkin
+
+    existing = find_today_checkin()
+    if existing:
+        return existing
+    now = now_iso()
+    data = {
+        "id": _new_chat_id(),
+        "title": "Comment ça va ?",
+        "kind": "checkin",
+        "created_at": now,
+        "updated_at": now,
+        "messages": [],
+        "report_id": None,
+    }
+    save_chat(data)
+    return data
+
+
 def _conversation_as_source(chat: dict) -> str:
     lines = [
         f"Titre de la conversation : {chat.get('title') or 'Sans titre'}",
@@ -388,6 +444,7 @@ def list_chats() -> dict:
             "message_count": len(msgs),
             "preview": preview,
             "report_id": data.get("report_id"),
+            "kind": data.get("kind"),
         })
     items.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
     return {"conversations": items}
@@ -407,6 +464,11 @@ def create_chat() -> dict:
     }
     save_chat(data)
     return data
+
+
+@router.post("/api/chats/checkin")
+def get_or_create_checkin() -> dict:
+    return get_or_create_today_checkin()
 
 
 @router.get("/api/chats/{chat_id}")
@@ -523,12 +585,23 @@ async def generate_report_from_chat(chat_id: str):
 
 @router.post("/api/chat")
 async def chat_with_asclepios(body: ChatRequest):
-    if not body.message or not body.message.strip():
+    opening = bool(body.checkin)
+    if not opening and not (body.message or "").strip():
         raise HTTPException(status_code=400, detail="Message vide")
 
     async def stream() -> AsyncGenerator[bytes, None]:
         try:
-            if body.conversation_id:
+            if opening:
+                if body.conversation_id:
+                    chat = load_chat(body.conversation_id)
+                    if chat.get("kind") != "checkin":
+                        chat["kind"] = "checkin"
+                        if not chat.get("title") or chat.get("title") == "Nouvelle conversation":
+                            chat["title"] = "Comment ça va ?"
+                        save_chat(chat)
+                else:
+                    chat = get_or_create_today_checkin()
+            elif body.conversation_id:
                 chat = load_chat(body.conversation_id)
             else:
                 now = now_iso()
@@ -555,25 +628,43 @@ async def chat_with_asclepios(body: ChatRequest):
             yield f"data: REPORT:{chat['report_id']}\n\n".encode()
 
         history = list(chat.get("messages") or [])
-        user_msg = {
-            "id": f"u-{uuid.uuid4().hex[:12]}",
-            "role": "user",
-            "content": body.message.strip(),
-            "created_at": now_iso(),
-        }
-        chat["messages"] = history + [user_msg]
-        if chat.get("title") in (None, "", "Nouvelle conversation"):
-            chat["title"] = _title_from_message(body.message)
-        chat["updated_at"] = now_iso()
-        if "report_id" not in chat:
-            chat["report_id"] = None
-        try:
-            save_chat(chat)
-            yield "data: Message utilisateur enregistré\n\n".encode()
-        except Exception as exc:
-            yield f"data: Erreur sauvegarde : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
+        if opening:
+            existing = next(
+                (
+                    m
+                    for m in reversed(history)
+                    if m.get("role") == "assistant" and (m.get("content") or "").strip()
+                ),
+                None,
+            )
+            if existing:
+                yield b"data: [ANSWER_START]\n\n"
+                text = (existing.get("content") or "").replace("\n", "\\n")
+                yield f"data: {text}\n\n".encode()
+                yield b"data: [ANSWER_END]\n\n"
+                yield f"data: TITLE:{chat.get('title') or 'Comment ça va ?'}\n\n".encode()
+                yield b"data: [DONE]\n\n"
+                return
+        else:
+            user_msg = {
+                "id": f"u-{uuid.uuid4().hex[:12]}",
+                "role": "user",
+                "content": body.message.strip(),
+                "created_at": now_iso(),
+            }
+            chat["messages"] = history + [user_msg]
+            if chat.get("title") in (None, "", "Nouvelle conversation"):
+                chat["title"] = _title_from_message(body.message)
+            chat["updated_at"] = now_iso()
+            if "report_id" not in chat:
+                chat["report_id"] = None
+            try:
+                save_chat(chat)
+                yield "data: Message utilisateur enregistré\n\n".encode()
+            except Exception as exc:
+                yield f"data: Erreur sauvegarde : {exc}\n\n".encode()
+                yield b"data: [ERROR]\n\n"
+                return
 
         async for chunk in stream_cmd("Sync", [config.PYTHON, str(config.SCRIPT_SYNC), "push"]):
             yield chunk
@@ -585,13 +676,19 @@ async def chat_with_asclepios(body: ChatRequest):
             context = await asyncio.to_thread(build_medical_context, config.VAULT_DIR)
             yield f"data: Contexte prêt ({len(context)} caractères)\n\n".encode()
 
-            vision_images = _resolve_vision_images(body.message)
+            vision_images = _resolve_vision_images(body.message or "")
             if vision_images:
                 names = ", ".join(p.name for p in vision_images)
                 yield f"data: Vision : {len(vision_images)} photo(s) ouverte(s) — {names}\n\n".encode()
 
             yield "data: Appel au modèle IA…\n\n".encode()
-            prompt = _build_chat_prompt(body.message, history, context)
+            prompt = _build_chat_prompt(
+                body.message,
+                history,
+                context,
+                kind=str(chat.get("kind") or "") or None,
+                opening=opening,
+            )
             raw_answer = await _chat_ai(prompt, vision_images)
         except Exception as exc:
             yield f"data: Erreur : {exc}\n\n".encode()

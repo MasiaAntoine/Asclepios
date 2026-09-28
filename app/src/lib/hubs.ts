@@ -29,6 +29,11 @@ export const HUB_TABS: Record<HubId, HubTab[]> = {
       match: (path) => path.startsWith('/humeur'),
     },
     {
+      label: 'Sport',
+      to: '/sport',
+      match: (path) => path.startsWith('/sport'),
+    },
+    {
       label: 'Agenda',
       to: '/agenda',
       match: (path) => path.startsWith('/agenda'),
@@ -80,6 +85,7 @@ export function hubForPath(path: string): HubId | null {
     path.startsWith('/suivi') ||
     path.startsWith('/poids') ||
     path.startsWith('/humeur') ||
+    path.startsWith('/sport') ||
     path.startsWith('/agenda')
   ) {
     return 'suivi'

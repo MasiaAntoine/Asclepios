@@ -112,6 +112,8 @@ export interface Profil {
     dose?: number
     note?: string
   }
+  /** Heure Europe/Paris du rappel sport quotidien, ex. "18:30". */
+  sport_notify_at?: string
   parents: {
     pere: Personne
     mere: Personne

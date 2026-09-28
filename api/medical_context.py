@@ -82,10 +82,17 @@ def build_medical_context(data_dir: Path) -> str:
     if poids.strip():
         add("Poids (CSV)", poids)
 
-    # Humeur quotidienne (0 = au plus bas, 10 = super bien)
+    # Humeur horodatée (0 = au plus bas, 10 = super bien ; plusieurs notes / jour)
     humeur = _read_text(data_dir / "suivi" / "humeur.csv")
     if humeur.strip():
-        add("Humeur quotidienne (0–10)", humeur)
+        add("Humeur (0–10, horodatée)", humeur)
+
+    sport = _read_json(data_dir / "suivi" / "sport.json")
+    if sport:
+        add("Programme sport", json.dumps(sport, ensure_ascii=False, indent=2))
+    sport_log = _read_json(data_dir / "suivi" / "sport-log.json")
+    if sport_log:
+        add("Séances sport (fait / pas fait)", json.dumps(sport_log, ensure_ascii=False, indent=2))
 
     # Labs
     labs_cfg = _read_json(data_dir / "suivi" / "labs-config.json")

@@ -6,26 +6,37 @@ import MoodScale from '@/components/MoodScale.vue'
 import OwlEmotionIcon from '@/components/OwlEmotionIcon.vue'
 import { useMood } from '@/composables/useMood'
 import { usePushSubscription } from '@/composables/usePushSubscription'
-import { formatMoodDate, moodOwl, todayIso } from '@/lib/mood'
+import { formatMoodDateTime, moodOwl, todayIso } from '@/lib/mood'
 
 const route = useRoute()
-const { today, saveMood } = useMood()
+const { slotDue, currentSlot, currentSlotMeta, saveMood, loading } = useMood()
 const { dialogOpen: pushDialogOpen } = usePushSubscription()
 
 const open = ref(false)
-const dismissedToday = ref('')
+const dismissedSlot = ref('')
 const score = ref<number | null>(null)
 const saving = ref(false)
 const error = ref<string | null>(null)
 
-const day = computed(() => todayIso())
+const slotKey = computed(() => {
+  const slot = currentSlot.value
+  return slot ? `${todayIso()}|${slot}` : ''
+})
+
 const canAsk = computed(
   () =>
-    !today.value &&
+    !loading.value &&
+    slotDue.value &&
     !pushDialogOpen.value &&
     route.path !== '/humeur' &&
-    dismissedToday.value !== day.value,
+    dismissedSlot.value !== slotKey.value &&
+    Boolean(slotKey.value),
 )
+
+const title = computed(() => {
+  const prompt = currentSlotMeta.value?.prompt ?? 'en ce moment'
+  return `Comment tu te sens ${prompt} ?`
+})
 
 function maybeAsk() {
   if (canAsk.value) {
@@ -37,7 +48,7 @@ function maybeAsk() {
 
 watch(canAsk, (value) => {
   if (value) maybeAsk()
-  else if (today.value) open.value = false
+  else if (!slotDue.value) open.value = false
 })
 
 onMounted(() => {
@@ -45,7 +56,7 @@ onMounted(() => {
 })
 
 function later() {
-  dismissedToday.value = day.value
+  dismissedSlot.value = slotKey.value
   open.value = false
 }
 
@@ -59,7 +70,7 @@ async function save() {
   saving.value = true
   error.value = null
   try {
-    await saveMood(day.value, score.value)
+    await saveMood(score.value)
     open.value = false
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Enregistrement impossible'
@@ -72,8 +83,8 @@ async function save() {
 <template>
   <Dialog
     :open="open"
-    title="Comment tu te sens aujourd’hui ?"
-    description="Une note de 0 (au plus bas) à 10 (super bien). Tu pourras la modifier plus tard."
+    :title="title"
+    description="Une note de 0 (au plus bas) à 10 (super bien), avec l’heure. Tu pourras la modifier plus tard."
     class="sm:max-w-lg"
     @update:open="onOpenChange"
   >
@@ -84,9 +95,14 @@ async function save() {
           :active="score != null"
           :size="40"
         />
-        <p class="text-sm font-medium capitalize text-[var(--foreground)]">
-          {{ formatMoodDate(day) }}
-        </p>
+        <div class="min-w-0">
+          <p class="text-sm font-medium capitalize text-[var(--foreground)]">
+            {{ formatMoodDateTime(new Date()) }}
+          </p>
+          <p v-if="currentSlotMeta" class="text-xs text-[var(--muted-foreground)]">
+            Créneau {{ currentSlotMeta.label.toLowerCase() }}
+          </p>
+        </div>
       </div>
       <MoodScale v-model:score="score" :disabled="saving" />
       <p v-if="error" class="text-xs text-red-600">{{ error }}</p>

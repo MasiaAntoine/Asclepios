@@ -21,6 +21,7 @@ const habitudeType = ref('')
 const habitudeDebut = ref('')
 const habitudeDose = ref('')
 const habitudeNote = ref('')
+const sportNotifyAt = ref('')
 
 const canSubmit = computed(
   () =>
@@ -50,6 +51,7 @@ function fillFromProfil() {
   habitudeDose.value =
     props.profil.habitude?.dose != null ? String(props.profil.habitude.dose) : ''
   habitudeNote.value = props.profil.habitude?.note ?? ''
+  sportNotifyAt.value = props.profil.sport_notify_at ?? ''
 }
 
 function openDialog() {
@@ -81,6 +83,7 @@ async function submit() {
       habitude_debut: habitudeDebut.value.trim(),
       habitude_dose: habitudeDose.value ? parseFloat(habitudeDose.value) : null,
       habitude_note: habitudeNote.value.trim(),
+      sport_notify_at: sportNotifyAt.value.trim(),
     }),
   })
 }
@@ -113,7 +116,7 @@ const inputClass =
         <div class="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-6 py-4">
           <div>
             <h2 class="text-base font-semibold text-[var(--foreground)]">Modifier le profil</h2>
-            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">Identité, taille et habitude</p>
+            <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">Identité, taille, habitude et rappel sport</p>
           </div>
           <button
             type="button"
@@ -177,6 +180,17 @@ const inputClass =
                 <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Note</label>
                 <input v-model="habitudeNote" type="text" :class="inputClass" />
               </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-[var(--border)] p-3 space-y-3">
+            <p class="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Rappel sport</p>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">Heure de la notification</label>
+              <input v-model="sportNotifyAt" type="time" :class="inputClass" />
+              <p class="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                Vide = pas de rappel. L’heure est celle de Paris.
+              </p>
             </div>
           </div>
 

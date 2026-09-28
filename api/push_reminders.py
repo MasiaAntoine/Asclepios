@@ -127,8 +127,14 @@ def check_agenda_reminders() -> dict[str, int]:
 
 
 def check_daily_mood() -> dict[str, int]:
+    from api.mood_slots import (
+        MIN_GAP_MINUTES,
+        PARIS,
+        SLOT_LABELS,
+        slot_at,
+    )
     from api.push_service import send_push, subscription_count
-    from api.routers.suivi import mood_logged_on
+    from api.routers.suivi import last_mood_at, mood_slot_filled
 
     if not config.vapid_is_configured():
         return {"mood": 0}
@@ -136,30 +142,128 @@ def check_daily_mood() -> dict[str, int]:
         return {"mood": 0}
 
     now = datetime.now(PARIS)
-    if now.hour < 20:
+    slot = slot_at(now)
+    if slot is None:
         return {"mood": 0}
 
     day = now.date().isoformat()
-    if mood_logged_on(day):
+    if mood_slot_filled(day, slot):
         return {"mood": 0}
 
+    last = last_mood_at()
+    if last is not None:
+        gap = (now - last).total_seconds() / 60
+        if gap < MIN_GAP_MINUTES:
+            return {"mood": 0}
+
     sent_map = _load_sent()
-    key = f"mood|{day}"
+    key = f"mood|{day}|{slot}"
     if key in sent_map:
         return {"mood": 0}
 
+    when = SLOT_LABELS.get(slot, "en ce moment")
     result = send_push(
         {
-            "title": "Comment tu te sens aujourd’hui ?",
+            "title": f"Comment tu te sens {when} ?",
             "body": "Note ton humeur de 0 (au plus bas) à 10 (super bien).",
-            "url": f"/humeur?date={day}",
+            "url": f"/humeur?slot={slot}",
             "tag": "asclepios-mood",
         },
-        ttl=16 * 3600,
+        ttl=3 * 3600,
     )
     sent_map[key] = datetime.now(timezone.utc).isoformat()
     _save_sent(sent_map)
     return {"mood": 1 if result.get("sent", 0) > 0 else 0}
+
+
+def check_daily_sport() -> dict[str, int]:
+    from api.push_service import send_push, subscription_count
+    from api.sport import load_program, sport_notify_at, today_complete
+
+    if not config.vapid_is_configured():
+        return {"sport": 0}
+    if subscription_count() == 0:
+        return {"sport": 0}
+
+    notify = sport_notify_at()
+    if not notify:
+        return {"sport": 0}
+
+    program = load_program().get("exercises") or []
+    if not program:
+        return {"sport": 0}
+
+    now = datetime.now(PARIS)
+    hour, minute = (int(p) for p in notify.split(":"))
+    if (now.hour, now.minute) < (hour, minute):
+        return {"sport": 0}
+
+    if today_complete(now):
+        return {"sport": 0}
+
+    day = now.date().isoformat()
+    sent_map = _load_sent()
+    key = f"sport|{day}"
+    if key in sent_map:
+        return {"sport": 0}
+
+    n = len(program)
+    result = send_push(
+        {
+            "title": "C’est l’heure du sport",
+            "body": f"{n} exercice{'s' if n > 1 else ''} à faire — dis si tu as fait chacun.",
+            "url": "/sport",
+            "tag": "asclepios-sport",
+        },
+        ttl=8 * 3600,
+    )
+    sent_map[key] = datetime.now(timezone.utc).isoformat()
+    _save_sent(sent_map)
+    return {"sport": 1 if result.get("sent", 0) > 0 else 0}
+
+
+def check_alive_checkin() -> dict[str, int]:
+    from api.checkin import (
+        notification_copy,
+        planned_at,
+        recent_user_chat,
+        today_checkin_engaged,
+    )
+    from api.push_service import send_push, subscription_count
+
+    if not config.vapid_is_configured():
+        return {"checkin": 0}
+    if subscription_count() == 0:
+        return {"checkin": 0}
+
+    now = datetime.now(PARIS)
+    planned = planned_at(now.date())
+    if planned is None or now < planned:
+        return {"checkin": 0}
+    if now.hour >= 22:
+        return {"checkin": 0}
+    if today_checkin_engaged() or recent_user_chat():
+        return {"checkin": 0}
+
+    day = now.date().isoformat()
+    sent_map = _load_sent()
+    key = f"checkin|{day}"
+    if key in sent_map:
+        return {"checkin": 0}
+
+    title, body = notification_copy(now.date())
+    result = send_push(
+        {
+            "title": title,
+            "body": body,
+            "url": "/assistant?checkin=1",
+            "tag": "asclepios-checkin",
+        },
+        ttl=6 * 3600,
+    )
+    sent_map[key] = datetime.now(timezone.utc).isoformat()
+    _save_sent(sent_map)
+    return {"checkin": 1 if result.get("sent", 0) > 0 else 0}
 
 
 async def reminder_loop() -> None:
@@ -173,6 +277,18 @@ async def reminder_loop() -> None:
             pass
         try:
             await asyncio.to_thread(check_daily_mood)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(check_daily_sport)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(check_alive_checkin)
         except asyncio.CancelledError:
             raise
         except Exception:

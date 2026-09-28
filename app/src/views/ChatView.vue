@@ -58,6 +58,7 @@ interface ConversationMeta {
   message_count: number;
   preview: string;
   report_id?: string | null;
+  kind?: string | null;
 }
 
 const API_BASE =
@@ -76,6 +77,7 @@ const userPhotoFailed = ref(false);
 const conversations = ref<ConversationMeta[]>([]);
 const activeId = ref<string | null>(null);
 const activeReportId = ref<string | null>(null);
+const activeKind = ref<string | null>(null);
 const messages = ref<ChatMsg[]>([
   { id: "welcome", role: "assistant", content: WELCOME },
 ]);
@@ -91,6 +93,7 @@ const inputEl = ref<HTMLTextAreaElement | null>(null);
 /** Liste des conversations (tiroir mobile). */
 const listOpen = ref(false);
 let abortController: AbortController | null = null;
+let checkinKickoffFor: string | null = null;
 
 const { shellStyle, keyboardOpen, syncViewport } = useChatKeyboardLayout(listEl);
 
@@ -269,6 +272,7 @@ function resetConversationState() {
   freshIds.value = new Set();
   activeId.value = null;
   activeReportId.value = null;
+  activeKind.value = null;
   messages.value = [{ id: "welcome", role: "assistant", content: WELCOME }];
   error.value = null;
   statusLine.value = "";
@@ -296,16 +300,28 @@ async function openConversation(id: string) {
       id: string;
       messages: ChatMsg[];
       report_id?: string | null;
+      kind?: string | null;
+      title?: string;
     };
     activeId.value = data.id;
     activeReportId.value = data.report_id ?? null;
+    activeKind.value = data.kind ?? null;
     const msgs = (data.messages ?? []).filter(
       (m) => m.role === "user" || m.role === "assistant",
     );
+    const isCheckin = data.kind === "checkin";
     messages.value = msgs.length
       ? msgs
-      : [{ id: "welcome", role: "assistant", content: WELCOME }];
+      : isCheckin
+        ? []
+        : [{ id: "welcome", role: "assistant", content: WELCOME }];
     void scrollToBottom();
+    const hasAssistant = msgs.some(
+      (m) => m.role === "assistant" && m.content.trim(),
+    );
+    if (isCheckin && !hasAssistant && !running.value && !generatingReport.value) {
+      void startCheckin(data.id);
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Chargement impossible";
   }
@@ -389,6 +405,7 @@ function upsertConversationMeta(
   if (existing) {
     if (title) existing.title = title;
     if (reportId !== undefined) existing.report_id = reportId;
+    if (activeKind.value) existing.kind = activeKind.value;
     existing.updated_at = now;
     existing.message_count = messages.value.filter(
       (m) => m.id !== "welcome",
@@ -402,6 +419,7 @@ function upsertConversationMeta(
       message_count: 1,
       preview: "",
       report_id: reportId ?? null,
+      kind: activeKind.value,
     });
   }
   conversations.value.sort((a, b) =>
@@ -656,6 +674,150 @@ async function send() {
   }
 }
 
+async function startCheckin(conversationId: string) {
+  if (running.value || generatingReport.value) return;
+  if (checkinKickoffFor === conversationId) return;
+  checkinKickoffFor = conversationId;
+
+  error.value = null;
+  statusLine.value = "";
+  messages.value = messages.value.filter((m) => m.id !== "welcome");
+
+  const assistantId = `a-${Date.now()}`;
+  messages.value.push({
+    id: assistantId,
+    role: "assistant",
+    content: "",
+    editProposals: [],
+  });
+  markFresh(assistantId);
+  stopReveal();
+  streamingId.value = assistantId;
+  revealed.value = "";
+  revealTarget.value = "";
+  void scrollToBottom();
+
+  running.value = true;
+  abortController = new AbortController();
+  activeKind.value = "checkin";
+  activeId.value = conversationId;
+  upsertConversationMeta(conversationId, "Comment ça va ?");
+
+  try {
+    const res = await apiFetch(`${API_BASE}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "",
+        conversation_id: conversationId,
+        checkin: true,
+      }),
+      signal: abortController.signal,
+    });
+    if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let inAnswer = false;
+    let answer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() ?? "";
+
+      for (const block of blocks) {
+        const line = block.replace(/^data: /, "");
+        if (line === "[DONE]" || line === "[ERROR]") continue;
+        if (line.startsWith("CONVERSATION:")) {
+          const id = line.slice("CONVERSATION:".length);
+          activeId.value = id;
+          upsertConversationMeta(id, "Comment ça va ?");
+          if (routeChatId() !== id) {
+            void router.replace({ name: "chat", params: { id } });
+          }
+          continue;
+        }
+        if (line.startsWith("TITLE:")) {
+          const title = line.slice("TITLE:".length);
+          if (activeId.value) upsertConversationMeta(activeId.value, title);
+          continue;
+        }
+        if (line === "[ANSWER_START]") {
+          inAnswer = true;
+          statusLine.value = "";
+          continue;
+        }
+        if (line === "[ANSWER_END]") {
+          inAnswer = false;
+          continue;
+        }
+        if (inAnswer) {
+          answer += line.replace(/\\n/g, "\n");
+          const msg = messages.value.find((m) => m.id === assistantId);
+          if (msg) msg.content = answer;
+          queueReveal(answer);
+        } else if (line.startsWith("Erreur")) {
+          error.value = line;
+        } else if (line.trim() && !line.startsWith("REPORT:") && !line.startsWith("EDIT_PROPOSAL:")) {
+          statusLine.value = line;
+        }
+      }
+    }
+
+    const msg = messages.value.find((m) => m.id === assistantId);
+    if (msg && !msg.content.trim()) {
+      msg.content = error.value
+        ? `Désolé — ${error.value}`
+        : "Je n’ai pas réussi à ouvrir le check-in. Réessaie dans un instant.";
+    }
+    if (msg) msg.created_at = new Date().toISOString();
+    await loadConversations();
+  } catch (e) {
+    if ((e as Error).name !== "AbortError") {
+      error.value = e instanceof Error ? e.message : "Erreur inconnue";
+      const msg = messages.value.find((m) => m.id === assistantId);
+      if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
+      checkinKickoffFor = null;
+    }
+  } finally {
+    running.value = false;
+    abortController = null;
+    statusLine.value = "";
+    const done = messages.value.find((m) => m.id === assistantId);
+    if (done?.content) {
+      queueReveal(done.content);
+      if (revealed.value.length >= revealTarget.value.length) {
+        streamingId.value = null;
+      }
+    } else {
+      flushReveal();
+      streamingId.value = null;
+    }
+  }
+}
+
+async function openCheckinFromNotif() {
+  if (running.value || generatingReport.value) return;
+  try {
+    const res = await apiFetch(`${API_BASE}/chats/checkin`, { method: "POST" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = (await res.json()) as { id: string };
+    if (!data.id) return;
+    if (routeChatId() === data.id) {
+      await openConversation(data.id);
+      return;
+    }
+    await router.replace({ name: "chat", params: { id: data.id } });
+  } catch (e) {
+    error.value =
+      e instanceof Error ? e.message : "Impossible d’ouvrir le check-in";
+  }
+}
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -699,6 +861,15 @@ watch(
     if (id === activeId.value) return;
     void openConversation(id);
   },
+);
+
+watch(
+  () => route.query.checkin,
+  (raw) => {
+    if (raw === undefined || raw === null || raw === "") return;
+    void openCheckinFromNotif();
+  },
+  { immediate: true },
 );
 
 onMounted(() => {
@@ -787,6 +958,12 @@ onMounted(() => {
           >
             <div class="flex items-start gap-2">
               <MessageSquare
+                v-if="c.kind !== 'checkin'"
+                :size="14"
+                class="mt-0.5 shrink-0 text-[var(--primary)]"
+              />
+              <Sparkles
+                v-else
                 :size="14"
                 class="mt-0.5 shrink-0 text-[var(--primary)]"
               />
@@ -815,6 +992,7 @@ onMounted(() => {
                 · {{ c.message_count }} msg</template
               >
               <template v-if="c.report_id"> · rapport</template>
+              <template v-else-if="c.kind === 'checkin'"> · check-in</template>
             </p>
           </button>
         </div>
@@ -864,6 +1042,9 @@ onMounted(() => {
                     {{ activeReportId }}
                   </button>
                   · suppression désactivée
+                </template>
+                <template v-else-if="activeKind === 'checkin'">
+                  Check-in du moment — questions précises, pas un briefing dossier
                 </template>
                 <template v-else>
                   Sauvegardé dans le vault · sync OVH à chaque message

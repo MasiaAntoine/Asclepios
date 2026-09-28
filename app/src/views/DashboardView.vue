@@ -13,6 +13,7 @@ import { useReportEmotions } from '@/composables/useReportEmotions'
 import { promptReportEmotions } from '@/composables/useEmotionPrompt'
 import { usePoids } from '@/composables/usePoids'
 import { useMood } from '@/composables/useMood'
+import { useSport } from '@/composables/useSport'
 import { useLabs } from '@/composables/useLabs'
 import { useMedications } from '@/composables/useMedications'
 import { useMedicationSeries } from '@/composables/useMedicationSeries'
@@ -33,11 +34,12 @@ import {
   TrendingDown,
   TrendingUp,
   UserRound,
+  Dumbbell,
 } from '@lucide/vue'
 import OwlEmotionIcon from '@/components/OwlEmotionIcon.vue'
 import ReportEmotionIcons from '@/components/ReportEmotionIcons.vue'
 import { EMOTIONS } from '@/lib/emotions'
-import { moodLabel, moodOwl } from '@/lib/mood'
+import { formatMoodTime, moodLabel, moodOwl } from '@/lib/mood'
 
 const router = useRouter()
 const { itemId, sheetOpen, openItem } = useMobileSheet()
@@ -61,7 +63,20 @@ const {
 const { reports, loading: reportsLoading } = useReports()
 const { isEvaluated } = useReportEmotions()
 const { dernier, delta, deltaRecent, loading: poidsLoading } = usePoids()
-const { today: moodToday, moyenne7j: moodMoyenne, missingDays: moodMissing } = useMood()
+const {
+  today: moodToday,
+  moyenne7j: moodMoyenne,
+  missingDays: moodMissing,
+  slotDue: moodSlotDue,
+  currentSlotMeta: moodSlotMeta,
+} = useMood()
+const {
+  sportDue,
+  todayDoneCount: sportDone,
+  exercises: sportExercises,
+  todayComplete: sportComplete,
+  notifyLabel: sportNotifyLabel,
+} = useSport()
 const {
   config: labsConfig,
   latestPrimary,
@@ -231,20 +246,43 @@ function go(path: string) {
       </section>
 
       <section
-        v-if="!moodToday"
+        v-if="moodSlotDue"
         class="flex items-center gap-3 rounded-2xl border border-[var(--primary)]/25 bg-[var(--card)] px-4 py-3.5 shadow-sm"
       >
         <OwlEmotionIcon emotion="calme" :size="40" />
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-[var(--foreground)]">Humeur du jour</p>
+          <p class="text-sm font-semibold text-[var(--foreground)]">
+            Comment tu te sens {{ moodSlotMeta?.prompt ?? 'en ce moment' }} ?
+          </p>
           <p class="text-xs text-[var(--muted-foreground)]">
-            Pas encore notée — 0 au plus bas, 10 super bien.
+            Note ce créneau — 0 au plus bas, 10 super bien.
           </p>
         </div>
         <button
           type="button"
           class="shrink-0 rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-medium text-[var(--primary-foreground)]"
           @click="go('/humeur')"
+        >
+          Noter
+        </button>
+      </section>
+
+      <section
+        v-if="sportDue"
+        class="flex items-center gap-3 rounded-2xl border border-[var(--primary)]/25 bg-[var(--card)] px-4 py-3.5 shadow-sm"
+      >
+        <Dumbbell :size="22" class="shrink-0 text-[var(--primary)]" />
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-[var(--foreground)]">C’est l’heure du sport</p>
+          <p class="text-xs text-[var(--muted-foreground)]">
+            {{ sportExercises.length }} exercice{{ sportExercises.length > 1 ? 's' : '' }}
+            — dis si tu as fait chacun.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-lg bg-[var(--primary)] px-3 py-2 text-xs font-medium text-[var(--primary-foreground)]"
+          @click="go('/sport')"
         >
           Noter
         </button>
@@ -269,10 +307,31 @@ function go(path: string) {
             <span class="text-sm font-medium text-[var(--muted-foreground)]">/10</span>
           </p>
           <p class="mt-1 text-xs text-[var(--muted-foreground)]">
-            <template v-if="moodToday">{{ moodLabel(moodToday.score) }}</template>
+            <template v-if="moodSlotDue">À noter · {{ moodSlotMeta?.label }}</template>
+            <template v-else-if="moodToday">{{ moodLabel(moodToday.score) }} · {{ formatMoodTime(moodToday.atObj) }}</template>
             <template v-else-if="moodMissing.length">{{ moodMissing.length }} j. en attente</template>
             <template v-else-if="moodMoyenne != null">7 j. : {{ moodMoyenne }}</template>
             <template v-else>Pas encore notée</template>
+          </p>
+        </button>
+
+        <button
+          type="button"
+          class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-left transition hover:border-[var(--primary)]/40 hover:bg-[var(--accent)]/40"
+          @click="go('/sport')"
+        >
+          <p class="text-[11px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]">Sport</p>
+          <p class="mt-1 flex items-center gap-2 text-2xl font-bold tabular-nums">
+            <Dumbbell :size="20" class="text-[var(--primary)]" />
+            <template v-if="sportExercises.length">{{ sportDone }}/{{ sportExercises.length }}</template>
+            <template v-else>—</template>
+          </p>
+          <p class="mt-1 text-xs text-[var(--muted-foreground)]">
+            <template v-if="sportDue">À noter</template>
+            <template v-else-if="sportComplete">Séance notée</template>
+            <template v-else-if="sportNotifyLabel">Rappel {{ sportNotifyLabel }}</template>
+            <template v-else-if="sportExercises.length">Programme prêt</template>
+            <template v-else>Pas encore de programme</template>
           </p>
         </button>
 

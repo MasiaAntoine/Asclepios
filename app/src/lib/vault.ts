@@ -6,6 +6,8 @@ export const VAULT = {
   signature: 'identite/signature.png',
   poids: 'suivi/poids.csv',
   humeur: 'suivi/humeur.csv',
+  sport: 'suivi/sport.json',
+  sportLog: 'suivi/sport-log.json',
   labs: 'suivi/labs.csv',
   labsConfig: 'suivi/labs-config.json',
   traitements: 'suivi/traitements.json',

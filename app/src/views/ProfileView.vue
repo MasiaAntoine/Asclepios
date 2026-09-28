@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useProfile, ageLabel } from '@/composables/useProfile'
 import type { RelationSuite } from '@/composables/useProfile'
 import {
   Activity,
   CreditCard,
+  Dumbbell,
   ExternalLink,
   FileText,
   Heart,
@@ -20,6 +21,8 @@ import {
 import EditProfileDialog from '@/components/EditProfileDialog.vue'
 import PageShell from '@/components/PageShell.vue'
 import { dataUrl } from '@/lib/dataClient'
+import { useSport } from '@/composables/useSport'
+import { formatNotifyAt } from '@/lib/sport'
 
 const {
   profil,
@@ -35,6 +38,33 @@ const {
   error,
   reload,
 } = useProfile()
+
+const { notifyAt, saveNotifyAt, exercises } = useSport()
+const notifyDraft = ref('')
+const notifySaving = ref(false)
+const notifyError = ref<string | null>(null)
+
+watch(
+  notifyAt,
+  (value) => {
+    notifyDraft.value = value
+  },
+  { immediate: true },
+)
+
+async function onNotifyBlur() {
+  if (notifyDraft.value === notifyAt.value || notifySaving.value) return
+  notifySaving.value = true
+  notifyError.value = null
+  try {
+    await saveNotifyAt(notifyDraft.value)
+  } catch (e) {
+    notifyError.value = e instanceof Error ? e.message : 'Enregistrement impossible'
+    notifyDraft.value = notifyAt.value
+  } finally {
+    notifySaving.value = false
+  }
+}
 
 async function onProfileSaved() {
   await reload()
@@ -564,6 +594,46 @@ function eventClass(e: string) {
               </template>
             </p>
           </div>
+        </section>
+
+        <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+          <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <h3 class="flex items-center gap-2 text-lg font-semibold text-[var(--foreground)]">
+              <Dumbbell :size="18" class="text-[var(--primary)]" />
+              Sport
+            </h3>
+            <RouterLink
+              :to="{ name: 'sport' }"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3 py-1.5 text-xs font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/20"
+            >
+              Programme
+            </RouterLink>
+          </div>
+          <p class="mb-3 text-sm text-[var(--muted-foreground)]">
+            Heure du rappel quotidien pour faire tes exercices.
+            <template v-if="exercises.length">
+              {{ exercises.length }} exercice{{ exercises.length > 1 ? 's' : '' }} dans le programme.
+            </template>
+          </p>
+          <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">
+            Notification
+          </label>
+          <div class="flex flex-wrap items-center gap-3">
+            <input
+              v-model="notifyDraft"
+              type="time"
+              class="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20"
+              :disabled="notifySaving"
+              @change="onNotifyBlur"
+              @blur="onNotifyBlur"
+            />
+            <p class="text-xs text-[var(--muted-foreground)]">
+              <template v-if="notifySaving">Enregistrement…</template>
+              <template v-else-if="notifyAt">Rappel à {{ formatNotifyAt(notifyAt) }}</template>
+              <template v-else>Pas de rappel tant qu’aucune heure n’est choisie</template>
+            </p>
+          </div>
+          <p v-if="notifyError" class="mt-2 text-xs text-red-600">{{ notifyError }}</p>
         </section>
 
         <!-- Traitements actifs -->
