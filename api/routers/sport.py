@@ -28,6 +28,11 @@ class SportProgramRequest(BaseModel):
 class SportLogItemIn(BaseModel):
     exercise_id: str
     done: bool
+    name: str | None = None
+    sets: int | None = None
+    reps: int | None = None
+    seconds: int | None = None
+    note: str = ""
 
 
 class SportLogRequest(BaseModel):

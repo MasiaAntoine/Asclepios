@@ -55,6 +55,14 @@ CANONICAL_DIRS = (
     "cache",
 )
 
+# Fichiers de suivi toujours présents pour le push/pull (créés vides si absents).
+CANONICAL_FILES = {
+    "suivi/humeur.csv": "at,score\n",
+    "suivi/sport.json": '{\n  "exercises": []\n}\n',
+    "suivi/sport-log.json": '{\n  "sessions": []\n}\n',
+    "rapports/emotions.json": "{}\n",
+}
+
 
 def load_config() -> dict:
     env_file = os.getenv("ASCLEPIOS_ENV_FILE", ".env").strip() or ".env"
@@ -163,10 +171,16 @@ def _is_skipped(path: Path) -> bool:
 
 
 def ensure_canonical_dirs(data_dir: Path) -> None:
-    """Crée les dossiers métier attendus (même vides)."""
+    """Crée les dossiers métier attendus (même vides) et les fichiers de suivi canoniques."""
     data_dir.mkdir(parents=True, exist_ok=True)
     for rel in CANONICAL_DIRS:
         (data_dir / rel).mkdir(parents=True, exist_ok=True)
+    for rel, content in CANONICAL_FILES.items():
+        path = data_dir / rel
+        if path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
 
 
 def purge_legacy_markers(data_dir: Path) -> int:

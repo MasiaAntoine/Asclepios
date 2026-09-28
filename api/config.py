@@ -32,7 +32,7 @@ SCRIPT_PARSE_ORD = SCRIPTS_DIR / "parse_ordonnance_pdf.py"
 
 IDENTITE_DIR = VAULT_DIR / "identite"
 PROFIL_PATH = IDENTITE_DIR / "profil.json"
-PHOTO_PATH = IDENTITE_DIR / "profil.png"
+PHOTO_PATH = IDENTITE_DIR / "profil.jpg"
 SIGNATURE_PATH = IDENTITE_DIR / "signature.png"
 
 MUTUELLE_DIR = VAULT_DIR / "mutuelle"

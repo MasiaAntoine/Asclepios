@@ -47,10 +47,10 @@ const maxWidthClass: Record<string, string> = {
   <div v-else class="flex h-full min-h-0 flex-col overflow-hidden">
     <header
       v-if="$slots.header || hub || title || $slots.title || description || $slots.description || $slots.actions"
-      class="shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3 sm:px-6 sm:py-4 md:px-8"
+      class="min-w-0 shrink-0 overflow-x-hidden border-b border-[var(--border)] bg-[var(--card)] px-4 py-3 sm:px-6 sm:py-4 md:px-8"
     >
       <slot name="header">
-        <div class="flex flex-col gap-3">
+        <div class="flex min-w-0 flex-col gap-3">
           <HubSubnav v-if="hub" :hub="hub" />
           <div
             v-if="(!hub && (title || $slots.title || description || $slots.description)) || $slots.actions || description || $slots.description"

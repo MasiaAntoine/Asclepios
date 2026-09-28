@@ -5,13 +5,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any, AsyncGenerator
 import re
-import subprocess
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from api import config
-from api.deps import dump_json, load_json, push_stream, sse
+from api.deps import dump_json, load_json, push_stream, push_vault_now, sse
 
 router = APIRouter(prefix="/api", tags=["suivi"])
 
@@ -28,6 +27,11 @@ class TreatmentEntryRequest(BaseModel):
 class PoidsAddRequest(BaseModel):
     date: str
     poids_kg: float
+
+
+class PoidsNotifyRequest(BaseModel):
+    weekday: int | None = None
+    notify_at: str | None = None
 
 
 class MoodUpsertRequest(BaseModel):
@@ -129,20 +133,30 @@ async def add_poids_entry(body: PoidsAddRequest):
     return sse(stream())
 
 
+@router.put("/poids/notify")
+def save_poids_notify(body: PoidsNotifyRequest, background_tasks: BackgroundTasks):
+    from api.poids import parse_weekday, set_poids_notify
+    from api.sport import parse_notify_at
+
+    raw = body.notify_at
+    if raw and parse_notify_at(raw) is None:
+        raise HTTPException(status_code=400, detail="Horaire invalide (HH:MM)")
+    if body.weekday is not None and parse_weekday(body.weekday) is None:
+        raise HTTPException(status_code=400, detail="Jour invalide (0 = lundi … 6 = dimanche)")
+    try:
+        weekday, at = set_poids_notify(body.weekday, raw)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    background_tasks.add_task(_push_vault)
+    return {"poids_notify_weekday": weekday, "poids_notify_at": at}
+
+
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _HUMEUR_HEADER = "at,score"
 
 
 def _push_vault() -> None:
-    try:
-        subprocess.run(
-            [config.PYTHON, str(config.SCRIPT_SYNC), "push"],
-            cwd=str(config.ROOT),
-            check=False,
-            capture_output=True,
-        )
-    except Exception:
-        pass
+    push_vault_now()
 
 
 def _parse_mood_at(raw: str) -> datetime | None:

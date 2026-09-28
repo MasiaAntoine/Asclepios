@@ -20,6 +20,8 @@ export interface OrdonnanceMedication {
   posology: string | null
   brand: string | null
   dose: string | null
+  strength?: string | null
+  quantity?: number | null
   form: string | null
 }
 

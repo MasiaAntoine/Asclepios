@@ -1,7 +1,12 @@
 import { computed, ref } from 'vue'
+import { apiFetch } from '@/lib/apiFetch'
 import { fetchJson, fetchText } from '@/lib/dataClient'
 import { parseFrDate } from '@/lib/chartTheme'
 import { VAULT } from '@/lib/vault'
+import { reloadProfile, useProfile } from '@/composables/useProfile'
+import { formatPoidsNotify } from '@/lib/poids'
+
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api'
 
 export interface PoidsEntry {
   date: string
@@ -67,6 +72,7 @@ export async function reloadPoids() {
 }
 
 export function usePoids() {
+  const { profil } = useProfile()
   if (!loaded && !loading.value) void load()
 
   const premier = computed(() => entries.value[0] ?? null)
@@ -94,6 +100,40 @@ export function usePoids() {
     return Number((e[e.length - 1].poids_kg - e[e.length - 2].poids_kg).toFixed(2))
   })
 
+  const notifyWeekday = computed(() => {
+    const raw = profil.value?.poids_notify_weekday
+    return typeof raw === 'number' && raw >= 0 && raw <= 6 ? raw : 0
+  })
+  const notifyAt = computed(() => (profil.value?.poids_notify_at || '').trim())
+  const notifyLabel = computed(() => formatPoidsNotify(notifyWeekday.value, notifyAt.value))
+
+  async function saveNotify(weekday: number | null, value: string) {
+    const at = value.trim()
+    const res = await apiFetch(`${API_BASE}/poids/notify`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        weekday: at ? weekday : null,
+        notify_at: at || null,
+      }),
+    })
+    if (!res.ok) throw new Error(`Enregistrement impossible (${res.status})`)
+    const json = (await res.json()) as {
+      poids_notify_weekday?: number | null
+      poids_notify_at?: string | null
+    }
+    if (profil.value) {
+      if (json.poids_notify_at) {
+        profil.value.poids_notify_at = json.poids_notify_at
+        profil.value.poids_notify_weekday = json.poids_notify_weekday ?? 0
+      } else {
+        delete profil.value.poids_notify_at
+        delete profil.value.poids_notify_weekday
+      }
+    }
+    await reloadProfile()
+  }
+
   return {
     entries,
     tailleCm,
@@ -103,9 +143,13 @@ export function usePoids() {
     max,
     delta,
     deltaRecent,
+    notifyWeekday,
+    notifyAt,
+    notifyLabel,
     loading,
     error,
     load,
     reload: reloadPoids,
+    saveNotify,
   }
 }

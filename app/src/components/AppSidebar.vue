@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import logoIconUrl from '@/assets/logo-icon.png'
-import { useAuth } from '@/composables/useAuth'
+import logoIconUrl from '@/assets/logo-icon.jpg'
+import UserMenu from '@/components/UserMenu.vue'
 import { hubForPath } from '@/lib/hubs'
 import {
   Activity,
   FileText,
   LayoutDashboard,
-  LogOut,
   UserRound,
   type LucideIcon,
 } from '@lucide/vue'
-
-const { logout } = useAuth()
 
 interface NavItem {
   label: string
@@ -48,6 +45,7 @@ const chatActive = computed(() => route.path.startsWith('/assistant'))
 const pageTitle = computed(() => {
   if (route.path === '/') return 'Accueil'
   if (chatActive.value) return 'Discuter'
+  if (route.path.startsWith('/settings')) return 'Réglages'
   const hub = hubForPath(route.path)
   if (hub === 'suivi') return 'Suivi'
   if (hub === 'documents') return 'Documents'
@@ -61,11 +59,6 @@ function navigate(item: NavItem) {
 
 function goChat() {
   void router.push('/assistant')
-}
-
-async function onLogout() {
-  await logout()
-  await router.push({ name: 'login' })
 }
 
 function syncDockOffset() {
@@ -107,11 +100,14 @@ watch(
 
 <template>
   <header
-    class="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 pt-[env(safe-area-inset-top)] md:hidden"
+    class="fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 pt-[env(safe-area-inset-top)] md:left-64"
   >
-    <p class="min-w-0 flex-1 truncate text-sm font-bold text-[var(--foreground)]">
+    <p class="min-w-0 flex-1 truncate text-sm font-bold text-[var(--foreground)] md:hidden">
       {{ pageTitle }}
     </p>
+    <div class="ml-auto">
+      <UserMenu />
+    </div>
   </header>
 
   <aside
@@ -157,15 +153,7 @@ watch(
       </button>
     </nav>
 
-    <div class="space-y-3 border-t border-[var(--border)] px-5 py-4">
-      <button
-        type="button"
-        class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
-        @click="onLogout"
-      >
-        <LogOut :size="16" />
-        Déconnexion
-      </button>
+    <div class="border-t border-[var(--border)] px-5 py-4">
       <p class="text-[11px] text-[var(--muted-foreground)]">Asclepios v0.1.0</p>
     </div>
   </aside>

@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { Bell, Home, Loader2, Smartphone } from '@lucide/vue'
 import Dialog from '@/components/ui/Dialog.vue'
-import logoIconUrl from '@/assets/logo-icon.png'
+import logoIconUrl from '@/assets/logo-icon.jpg'
 import { usePushSubscription } from '@/composables/usePushSubscription'
 
 const {

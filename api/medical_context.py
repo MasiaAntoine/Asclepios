@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 # Budget total approximatif pour le prompt (caractères)
 _MAX_TOTAL = 140_000
 _MAX_PER_REPORT = 6_000
+
+EMOTION_LABELS = {
+    "joie": "joie",
+    "tristesse": "tristesse",
+    "anxiete": "anxiété",
+    "colere": "colère",
+    "calme": "calme",
+    "espoir": "espoir",
+    "fatigue": "fatigue",
+    "soulagement": "soulagement",
+}
 
 
 def _read_text(path: Path) -> str:
@@ -41,8 +53,89 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 40].rstrip() + "\n\n[… truncature …]"
 
 
+def format_humeur(data_dir: Path) -> str:
+    raw = _read_text(data_dir / "suivi" / "humeur.csv")
+    if not raw.strip():
+        return ""
+    return (
+        "Échelle 0 (au plus bas) à 10 (super bien). "
+        "Plusieurs notes possibles par jour, horodatées Europe/Paris.\n\n"
+        + raw.strip()
+    )
+
+
+def format_sport(data_dir: Path) -> str:
+    blocks: list[str] = []
+    program = _read_json(data_dir / "suivi" / "sport.json")
+    exercises = program.get("exercises") if isinstance(program, dict) else None
+    if exercises:
+        blocks.append(
+            "Programme :\n" + json.dumps(program, ensure_ascii=False, indent=2)
+        )
+    log = _read_json(data_dir / "suivi" / "sport-log.json")
+    sessions = log.get("sessions") if isinstance(log, dict) else None
+    if sessions:
+        blocks.append(
+            "Séances (fait / pas fait) :\n"
+            + json.dumps(log, ensure_ascii=False, indent=2)
+        )
+    return "\n\n".join(blocks)
+
+
+def format_report_emotions(data_dir: Path) -> str:
+    data = _read_json(data_dir / "rapports" / "emotions.json")
+    if not isinstance(data, dict) or not data:
+        return ""
+    lines: list[str] = [
+        "Ressenti associé à chaque rapport personnel "
+        "(choisi par l'utilisateur après lecture, pas un diagnostic) :"
+    ]
+    for report_id, ids in data.items():
+        if not isinstance(report_id, str):
+            continue
+        raw_ids = ids
+        if isinstance(ids, dict):
+            raw_ids = ids.get("emotions") or ids.get("ids")
+        if not isinstance(raw_ids, list):
+            continue
+        labels = [
+            EMOTION_LABELS.get(str(e), str(e))
+            for e in raw_ids
+            if str(e) in EMOTION_LABELS
+        ]
+        if not labels:
+            continue
+        title = report_id
+        md = data_dir / "rapports" / f"{report_id}.md"
+        if md.is_file():
+            m = re.search(r"^#\s+(.+)", _read_text(md), re.MULTILINE)
+            if m:
+                title = m.group(1).strip()
+        day = report_id[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", report_id) else ""
+        prefix = f"{day} — " if day else ""
+        lines.append(f"- {prefix}{title} : {', '.join(labels)}")
+    if len(lines) < 2:
+        return ""
+    return "\n".join(lines)
+
+
+def build_suivi_context(data_dir: Path) -> str:
+    """Humeur, sport et émotions des rapports — bloc compact pour l'IA."""
+    parts: list[str] = []
+    humeur = format_humeur(data_dir)
+    if humeur:
+        parts.append(_section("Humeur (0–10, horodatée)", humeur))
+    sport = format_sport(data_dir)
+    if sport:
+        parts.append(_section("Sport (programme et séances)", sport))
+    emotions = format_report_emotions(data_dir)
+    if emotions:
+        parts.append(_section("Émotions des rapports", emotions))
+    return "".join(parts)
+
+
 def build_medical_context(data_dir: Path) -> str:
-    """Agrège profil, poids, labs, traitements, médecins, fiches et rapports."""
+    """Agrège profil, poids, humeur, sport, labs, traitements, médecins, fiches et rapports."""
     parts: list[str] = []
     budget = _MAX_TOTAL
 
@@ -82,17 +175,11 @@ def build_medical_context(data_dir: Path) -> str:
     if poids.strip():
         add("Poids (CSV)", poids)
 
-    # Humeur horodatée (0 = au plus bas, 10 = super bien ; plusieurs notes / jour)
-    humeur = _read_text(data_dir / "suivi" / "humeur.csv")
-    if humeur.strip():
-        add("Humeur (0–10, horodatée)", humeur)
-
-    sport = _read_json(data_dir / "suivi" / "sport.json")
-    if sport:
-        add("Programme sport", json.dumps(sport, ensure_ascii=False, indent=2))
-    sport_log = _read_json(data_dir / "suivi" / "sport-log.json")
-    if sport_log:
-        add("Séances sport (fait / pas fait)", json.dumps(sport_log, ensure_ascii=False, indent=2))
+    suivi = build_suivi_context(data_dir)
+    if suivi.strip() and budget > 0:
+        chunk = suivi if len(suivi) <= budget else suivi[: max(200, budget - 40)] + "\n\n[… truncature …]\n"
+        parts.append(chunk)
+        budget -= len(chunk)
 
     # Labs
     labs_cfg = _read_json(data_dir / "suivi" / "labs-config.json")

@@ -72,11 +72,6 @@ export const HUB_TABS: Record<HubId, HubTab[]> = {
       to: '/meds',
       match: (path) => path.startsWith('/meds'),
     },
-    {
-      label: 'Réglages',
-      to: '/settings',
-      match: (path) => path.startsWith('/settings'),
-    },
   ],
 }
 
@@ -100,8 +95,7 @@ export function hubForPath(path: string): HubId | null {
   if (
     path.startsWith('/profil') ||
     path.startsWith('/medecins') ||
-    path.startsWith('/meds') ||
-    path.startsWith('/settings')
+    path.startsWith('/meds')
   ) {
     return 'dossier'
   }

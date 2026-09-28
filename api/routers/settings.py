@@ -20,7 +20,8 @@ _SKIP_NAMES = {
     ".DS_Store",
     ".vault_structure.json",
     "__pycache__",
-    "agenda-cache.json",
+    ".cache",
+    "cache",
     ".ovhdir",
 }
 

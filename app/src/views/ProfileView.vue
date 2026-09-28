@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useProfile, ageLabel } from '@/composables/useProfile'
 import type { RelationSuite } from '@/composables/useProfile'
@@ -21,8 +21,8 @@ import {
 import EditProfileDialog from '@/components/EditProfileDialog.vue'
 import PageShell from '@/components/PageShell.vue'
 import { dataUrl } from '@/lib/dataClient'
-import { useSport } from '@/composables/useSport'
 import { formatNotifyAt } from '@/lib/sport'
+import { formatPoidsNotify } from '@/lib/poids'
 
 const {
   profil,
@@ -38,33 +38,6 @@ const {
   error,
   reload,
 } = useProfile()
-
-const { notifyAt, saveNotifyAt, exercises } = useSport()
-const notifyDraft = ref('')
-const notifySaving = ref(false)
-const notifyError = ref<string | null>(null)
-
-watch(
-  notifyAt,
-  (value) => {
-    notifyDraft.value = value
-  },
-  { immediate: true },
-)
-
-async function onNotifyBlur() {
-  if (notifyDraft.value === notifyAt.value || notifySaving.value) return
-  notifySaving.value = true
-  notifyError.value = null
-  try {
-    await saveNotifyAt(notifyDraft.value)
-  } catch (e) {
-    notifyError.value = e instanceof Error ? e.message : 'Enregistrement impossible'
-    notifyDraft.value = notifyAt.value
-  } finally {
-    notifySaving.value = false
-  }
-}
 
 async function onProfileSaved() {
   await reload()
@@ -568,6 +541,18 @@ function eventClass(e: string) {
             <p class="mt-0.5 text-xs text-[var(--muted-foreground)]">
               {{ dernierPoids ? `Mesuré le ${dernierPoids.date}` : 'Aucune mesure' }}
             </p>
+            <RouterLink
+              :to="{ path: '/poids' }"
+              class="mt-2 inline-block text-xs font-medium text-[var(--primary)] hover:underline"
+            >
+              <template v-if="profil.poids_notify_at">
+                Rappel {{ formatPoidsNotify(profil.poids_notify_weekday, profil.poids_notify_at) }}.
+              </template>
+              <template v-else>
+                Pas de rappel de pesée.
+              </template>
+              Jour et heure se règlent dans l’onglet Poids.
+            </RouterLink>
           </div>
 
           <div class="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
@@ -609,31 +594,15 @@ function eventClass(e: string) {
               Programme
             </RouterLink>
           </div>
-          <p class="mb-3 text-sm text-[var(--muted-foreground)]">
-            Heure du rappel quotidien pour faire tes exercices.
-            <template v-if="exercises.length">
-              {{ exercises.length }} exercice{{ exercises.length > 1 ? 's' : '' }} dans le programme.
+          <p class="mb-1 text-sm text-[var(--muted-foreground)]">
+            <template v-if="profil.sport_notify_at">
+              Rappel quotidien à {{ formatNotifyAt(profil.sport_notify_at) }}.
             </template>
+            <template v-else>
+              Pas de rappel pour l’instant.
+            </template>
+            L’heure se règle dans l’onglet Sport.
           </p>
-          <label class="mb-1 block text-xs font-medium text-[var(--muted-foreground)]">
-            Notification
-          </label>
-          <div class="flex flex-wrap items-center gap-3">
-            <input
-              v-model="notifyDraft"
-              type="time"
-              class="rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20"
-              :disabled="notifySaving"
-              @change="onNotifyBlur"
-              @blur="onNotifyBlur"
-            />
-            <p class="text-xs text-[var(--muted-foreground)]">
-              <template v-if="notifySaving">Enregistrement…</template>
-              <template v-else-if="notifyAt">Rappel à {{ formatNotifyAt(notifyAt) }}</template>
-              <template v-else>Pas de rappel tant qu’aucune heure n’est choisie</template>
-            </p>
-          </div>
-          <p v-if="notifyError" class="mt-2 text-xs text-red-600">{{ notifyError }}</p>
         </section>
 
         <!-- Traitements actifs -->

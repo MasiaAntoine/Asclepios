@@ -41,6 +41,8 @@ function openDialog() {
   open.value = true
 }
 
+defineExpose({ openDialog })
+
 function closeDialog() {
   if (!running.value) {
     cancel()

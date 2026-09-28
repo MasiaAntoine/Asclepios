@@ -21,6 +21,13 @@ from api import config
 
 SSE_HEADERS = config.SSE_HEADERS
 
+CANONICAL_VAULT_FILES = {
+    "suivi/humeur.csv": "at,score\n",
+    "suivi/sport.json": '{\n  "exercises": []\n}\n',
+    "suivi/sport-log.json": '{\n  "sessions": []\n}\n',
+    "rapports/emotions.json": "{}\n",
+}
+
 
 async def stream_cmd(label: str, cmd: list[str]) -> AsyncGenerator[bytes, None]:
     yield f"data: ▶  {label}\n\n".encode()
@@ -161,6 +168,38 @@ def load_json(path: Path):
 
 def dump_json(path: Path, data: object) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def ensure_canonical_vault_files(root: Path | None = None) -> None:
+    """Crée les fichiers de suivi attendus s'ils n'existent pas encore (sans écraser)."""
+    base = root or config.VAULT_DIR
+    base.mkdir(parents=True, exist_ok=True)
+    for rel, content in CANONICAL_VAULT_FILES.items():
+        path = base / rel
+        if path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+
+def push_vault_now() -> None:
+    """Push incrémental vault → OVH (humeur, sport, émotions des rapports inclus)."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            [config.PYTHON, str(config.SCRIPT_SYNC), "push"],
+            cwd=str(config.ROOT),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()[-500:]
+            print(f"! Push vault échoué (code {proc.returncode}) : {err}", flush=True)
+    except Exception as exc:
+        print(f"! Push vault impossible : {exc}", flush=True)
 
 
 def load_parse_lab():

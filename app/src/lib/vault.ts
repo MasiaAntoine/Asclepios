@@ -2,7 +2,7 @@
 
 export const VAULT = {
   profil: 'identite/profil.json',
-  photo: 'identite/profil.png',
+  photo: 'identite/profil.jpg',
   signature: 'identite/signature.png',
   poids: 'suivi/poids.csv',
   humeur: 'suivi/humeur.csv',

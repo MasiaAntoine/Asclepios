@@ -1,18 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
 import {
+  Bell,
   Check,
   ChevronDown,
   ChevronUp,
-  Dumbbell,
   Loader,
   Plus,
   Trash2,
   X,
 } from '@lucide/vue'
 import PageShell from '@/components/PageShell.vue'
-import { useSport } from '@/composables/useSport'
+import { useSport, type SportLogItem } from '@/composables/useSport'
 import {
   EXERCISE_CATALOG,
   formatNotifyAt,
@@ -21,7 +20,6 @@ import {
   type SportExercise,
 } from '@/lib/sport'
 
-const router = useRouter()
 const {
   exercises,
   loading,
@@ -35,10 +33,14 @@ const {
   recentSessions,
   saveProgram,
   answerExercise,
+  saveNotifyAt,
 } = useSport()
 
 const savingId = ref<string | null>(null)
 const programSaving = ref(false)
+const notifyDraft = ref('')
+const notifySaving = ref(false)
+const notifyError = ref<string | null>(null)
 const editorOpen = ref(false)
 const editorIndex = ref<number | null>(null)
 const editorName = ref('')
@@ -51,6 +53,39 @@ const editorExisting = computed(() => editorIndex.value != null)
 
 const inputClass =
   'w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20'
+
+watch(
+  notifyAt,
+  (value) => {
+    notifyDraft.value = value
+  },
+  { immediate: true },
+)
+
+async function persistNotify(value: string) {
+  if (notifySaving.value) return
+  const next = value.trim()
+  if (next === notifyAt.value) return
+  notifySaving.value = true
+  notifyError.value = null
+  try {
+    await saveNotifyAt(next)
+  } catch (e) {
+    notifyError.value = e instanceof Error ? e.message : 'Enregistrement impossible'
+    notifyDraft.value = notifyAt.value
+  } finally {
+    notifySaving.value = false
+  }
+}
+
+function onNotifyChange() {
+  void persistNotify(notifyDraft.value)
+}
+
+function clearNotify() {
+  notifyDraft.value = ''
+  void persistNotify('')
+}
 
 function openNew() {
   editorIndex.value = null
@@ -178,6 +213,37 @@ function sessionStats(items: { done: boolean }[]) {
   const done = items.filter((i) => i.done).length
   return `${done}/${items.length}`
 }
+
+function sessionTime(at: string) {
+  if (!at) return ''
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
+
+function historyItem(item: SportLogItem) {
+  const exo = exercises.value.find((e) => e.id === item.exercise_id)
+  return {
+    id: item.exercise_id,
+    name: item.name || exo?.name || item.exercise_id,
+    prescription: formatPrescription({
+      sets: item.sets ?? exo?.sets ?? 1,
+      reps: item.reps ?? exo?.reps ?? null,
+      seconds: item.seconds ?? exo?.seconds ?? null,
+    }),
+    note: item.note || exo?.note || '',
+    done: item.done,
+  }
+}
+
+const detailedSessions = computed(() =>
+  recentSessions.value.map((session) => ({
+    date: session.date,
+    at: session.at,
+    items: session.items,
+    rows: session.items.map(historyItem),
+  })),
+)
 </script>
 
 <template>
@@ -188,15 +254,6 @@ function sessionStats(items: { done: boolean }[]) {
         <template v-if="notifyLabel"> · rappel à {{ notifyLabel }}</template>
         <template v-else> · pas de rappel</template>
       </p>
-    </template>
-    <template #actions>
-      <button
-        type="button"
-        class="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--accent)]"
-        @click="router.push('/profil')"
-      >
-        Heure du rappel
-      </button>
     </template>
 
     <div class="space-y-6">
@@ -209,7 +266,7 @@ function sessionStats(items: { done: boolean }[]) {
 
       <template v-else>
         <section class="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-5">
-          <div class="mb-3 flex items-center justify-between gap-3">
+          <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-sm font-semibold text-[var(--foreground)]">Séance du jour</p>
               <p class="text-xs text-[var(--muted-foreground)]">
@@ -223,8 +280,31 @@ function sessionStats(items: { done: boolean }[]) {
                 </template>
               </p>
             </div>
-            <Dumbbell :size="22" class="text-[var(--primary)]" />
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-1.5">
+                <Bell :size="15" class="text-[var(--primary)]" />
+                <span class="text-xs font-medium text-[var(--muted-foreground)]">Rappel</span>
+                <input
+                  v-model="notifyDraft"
+                  type="time"
+                  class="bg-transparent text-sm text-[var(--foreground)] focus:outline-none"
+                  :disabled="notifySaving"
+                  @change="onNotifyChange"
+                />
+              </label>
+              <button
+                v-if="notifyDraft"
+                type="button"
+                class="rounded-lg px-2 py-2 text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                :disabled="notifySaving"
+                @click="clearNotify"
+              >
+                Aucun
+              </button>
+              <Loader v-if="notifySaving" :size="14" class="animate-spin text-[var(--muted-foreground)]" />
+            </div>
           </div>
+          <p v-if="notifyError" class="mb-3 text-xs text-red-600">{{ notifyError }}</p>
 
           <p
             v-if="!exercises.length"
@@ -351,7 +431,7 @@ function sessionStats(items: { done: boolean }[]) {
         </section>
 
         <section
-          v-if="recentSessions.length"
+          v-if="detailedSessions.length"
           class="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]"
         >
           <div class="border-b border-[var(--border)] px-5 py-3">
@@ -359,14 +439,42 @@ function sessionStats(items: { done: boolean }[]) {
           </div>
           <ul class="divide-y divide-[var(--border)]">
             <li
-              v-for="session in recentSessions"
+              v-for="session in detailedSessions"
               :key="session.date"
-              class="flex items-center justify-between gap-3 px-4 py-3"
+              class="px-4 py-3"
             >
-              <p class="text-sm capitalize text-[var(--foreground)]">{{ sessionLabel(session.date) }}</p>
-              <p class="text-xs font-medium tabular-nums text-[var(--muted-foreground)]">
-                {{ sessionStats(session.items) }} faits
-              </p>
+              <div class="mb-2 flex items-baseline justify-between gap-3">
+                <p class="text-sm capitalize text-[var(--foreground)]">
+                  {{ sessionLabel(session.date) }}
+                  <span v-if="sessionTime(session.at)" class="font-normal text-[var(--muted-foreground)]">
+                    · {{ sessionTime(session.at) }}
+                  </span>
+                </p>
+                <p class="text-xs font-medium tabular-nums text-[var(--muted-foreground)]">
+                  {{ sessionStats(session.items) }} faits
+                </p>
+              </div>
+              <ul class="space-y-1.5">
+                <li
+                  v-for="row in session.rows"
+                  :key="row.id"
+                  class="flex items-start justify-between gap-3 text-xs"
+                >
+                  <div class="min-w-0">
+                    <p class="font-medium text-[var(--foreground)]">{{ row.name }}</p>
+                    <p class="text-[var(--muted-foreground)]">
+                      {{ row.prescription }}
+                      <template v-if="row.note"> · {{ row.note }}</template>
+                    </p>
+                  </div>
+                  <span
+                    class="shrink-0 font-medium"
+                    :class="row.done ? 'text-emerald-700' : 'text-red-700'"
+                  >
+                    {{ row.done ? 'fait' : 'pas fait' }}
+                  </span>
+                </li>
+              </ul>
             </li>
           </ul>
         </section>

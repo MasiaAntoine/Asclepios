@@ -16,7 +16,7 @@ import {
   UserRound,
   X,
 } from "@lucide/vue";
-import logoIconUrl from "@/assets/logo-icon.png";
+import logoIconUrl from "@/assets/logo-icon.jpg";
 import { useProfile } from "@/composables/useProfile";
 import { useChatKeyboardLayout } from "@/composables/useChatKeyboardLayout";
 import PageShell from "@/components/PageShell.vue";
@@ -47,6 +47,7 @@ interface ChatMsg {
   role: "user" | "assistant" | "system";
   content: string;
   created_at?: string;
+  status?: string;
   editProposals?: EditProposalData[];
 }
 
@@ -59,6 +60,7 @@ interface ConversationMeta {
   preview: string;
   report_id?: string | null;
   kind?: string | null;
+  pending?: string | null;
 }
 
 const API_BASE =
@@ -94,6 +96,23 @@ const inputEl = ref<HTMLTextAreaElement | null>(null);
 const listOpen = ref(false);
 let abortController: AbortController | null = null;
 let checkinKickoffFor: string | null = null;
+let streamGen = 0;
+
+function normalizeMsg(raw: Record<string, unknown>): ChatMsg | null {
+  const role = raw.role;
+  if (role !== "user" && role !== "assistant" && role !== "system") return null;
+  const proposals = raw.editProposals ?? raw.edit_proposals;
+  return {
+    id: String(raw.id || ""),
+    role,
+    content: String(raw.content || ""),
+    created_at: raw.created_at ? String(raw.created_at) : undefined,
+    status: raw.status ? String(raw.status) : undefined,
+    editProposals: Array.isArray(proposals)
+      ? (proposals as EditProposalData[])
+      : [],
+  };
+}
 
 const { shellStyle, keyboardOpen, syncViewport } = useChatKeyboardLayout(listEl);
 
@@ -239,6 +258,8 @@ function markFresh(id: string) {
 }
 
 onUnmounted(() => {
+  streamGen += 1;
+  abortController?.abort();
   stopReveal();
 });
 
@@ -280,11 +301,243 @@ function resetConversationState() {
   listOpen.value = false;
 }
 
-async function openConversation(id: string) {
-  if (running.value || generatingReport.value) {
-    listOpen.value = false;
-    return;
+function remapAssistantId(fromId: string, toId: string) {
+  if (!toId || fromId === toId) return toId;
+  const msg = messages.value.find((m) => m.id === fromId);
+  if (msg) msg.id = toId;
+  if (streamingId.value === fromId) streamingId.value = toId;
+  const next = new Set(freshIds.value);
+  if (next.has(fromId)) {
+    next.delete(fromId);
+    next.add(toId);
+    freshIds.value = next;
   }
+  return toId;
+}
+
+async function consumeChatSse(
+  res: Response,
+  state: { assistantId: string },
+): Promise<{ aborted: boolean }> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let inAnswer = false;
+  let answer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const line = block.replace(/^data: /, "");
+      if (!line.trim() || line.startsWith(":")) continue;
+      if (line === "[DONE]") continue;
+      if (line === "[ERROR]") {
+        error.value = "Une erreur est survenue.";
+        continue;
+      }
+      if (line.startsWith("CONVERSATION:")) {
+        const id = line.slice("CONVERSATION:".length);
+        activeId.value = id;
+        upsertConversationMeta(id);
+        if (routeChatId() !== id) {
+          void router.replace({ name: "chat", params: { id } });
+        }
+        continue;
+      }
+      if (line.startsWith("ASSISTANT:")) {
+        state.assistantId = remapAssistantId(
+          state.assistantId,
+          line.slice("ASSISTANT:".length),
+        );
+        continue;
+      }
+      if (line.startsWith("REPORT:")) {
+        activeReportId.value = line.slice("REPORT:".length);
+        if (activeId.value) {
+          upsertConversationMeta(
+            activeId.value,
+            undefined,
+            activeReportId.value,
+          );
+        }
+        continue;
+      }
+      if (line.startsWith("TITLE:")) {
+        const title = line.slice("TITLE:".length);
+        if (activeId.value) upsertConversationMeta(activeId.value, title);
+        continue;
+      }
+      if (line.startsWith("EDIT_PROPOSAL:")) {
+        try {
+          const proposal = JSON.parse(
+            line.slice("EDIT_PROPOSAL:".length),
+          ) as EditProposalData;
+          const msg = messages.value.find((m) => m.id === state.assistantId);
+          if (msg) {
+            msg.editProposals = msg.editProposals || [];
+            msg.editProposals.push(proposal);
+          }
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
+      if (line === "[ANSWER_START]") {
+        inAnswer = true;
+        statusLine.value = "";
+        continue;
+      }
+      if (line === "[ANSWER_END]") {
+        inAnswer = false;
+        continue;
+      }
+      if (inAnswer) {
+        answer += line.replace(/\\n/g, "\n");
+        const msg = messages.value.find((m) => m.id === state.assistantId);
+        if (msg) {
+          msg.content = answer;
+          msg.status = undefined;
+        }
+        queueReveal(answer);
+      } else if (line.startsWith("Erreur")) {
+        error.value = line;
+      } else if (line.trim()) {
+        statusLine.value = line;
+      }
+    }
+  }
+  const msg = messages.value.find((m) => m.id === state.assistantId);
+  if (msg && answer) {
+    msg.content = answer;
+    msg.status = undefined;
+    if (!msg.created_at) msg.created_at = new Date().toISOString();
+  }
+  return { aborted: false };
+}
+
+function beginLocalStream() {
+  abortController?.abort();
+  abortController = new AbortController();
+  streamGen += 1;
+  return streamGen;
+}
+
+async function followReply(chatId: string, assistantId: string) {
+  const gen = beginLocalStream();
+  running.value = true;
+  error.value = null;
+  statusLine.value = "";
+  streamingId.value = assistantId;
+  revealed.value = messages.value.find((m) => m.id === assistantId)?.content || "";
+  revealTarget.value = revealed.value;
+  const state = { assistantId };
+  try {
+    const res = await apiFetch(
+      `${API_BASE}/chats/${chatId}/events?kind=reply`,
+      { signal: abortController?.signal },
+    );
+    if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+    await consumeChatSse(res, state);
+    await loadConversations();
+  } catch (e) {
+    if ((e as Error).name === "AbortError") return;
+    error.value = e instanceof Error ? e.message : "Erreur inconnue";
+  } finally {
+    if (gen !== streamGen) return;
+    running.value = false;
+    abortController = null;
+    statusLine.value = "";
+    const done = messages.value.find((m) => m.id === state.assistantId);
+    if (done?.content) {
+      queueReveal(done.content);
+      if (revealed.value.length >= revealTarget.value.length) {
+        streamingId.value = null;
+      }
+    } else {
+      flushReveal();
+      streamingId.value = null;
+    }
+  }
+}
+
+async function consumeReportSse(res: Response): Promise<string | null> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let generatedId: string | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) {
+      const line = block.replace(/^data: /, "");
+      if (!line.trim() || line.startsWith(":")) continue;
+      if (line === "[DONE]") continue;
+      if (line === "[ERROR]") {
+        error.value = "Échec de la génération du rapport.";
+        continue;
+      }
+      if (line.startsWith("REPORT:")) {
+        const rid = line.slice("REPORT:".length);
+        generatedId = rid;
+        activeReportId.value = rid;
+        if (activeId.value)
+          upsertConversationMeta(activeId.value, undefined, rid);
+        void reloadReports();
+        continue;
+      }
+      if (line.startsWith("Erreur")) {
+        error.value = line;
+      } else if (line.trim()) {
+        reportStatus.value = line;
+      }
+    }
+  }
+  return generatedId;
+}
+
+async function followReport(chatId: string, start: boolean) {
+  const gen = beginLocalStream();
+  generatingReport.value = true;
+  error.value = null;
+  reportStatus.value = "";
+  try {
+    const res = await apiFetch(
+      start
+        ? `${API_BASE}/chats/${chatId}/generate-report`
+        : `${API_BASE}/chats/${chatId}/events?kind=report`,
+      {
+        method: start ? "POST" : "GET",
+        signal: abortController?.signal,
+      },
+    );
+    if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+    const generatedId = await consumeReportSse(res);
+    await loadConversations();
+    if (generatedId && !error.value) {
+      window.setTimeout(() => promptReportEmotions(generatedId), 400);
+    }
+  } catch (e) {
+    if ((e as Error).name === "AbortError") return;
+    error.value = e instanceof Error ? e.message : "Erreur génération rapport";
+  } finally {
+    if (gen !== streamGen) return;
+    generatingReport.value = false;
+    abortController = null;
+  }
+}
+
+async function openConversation(id: string) {
+  abortController?.abort();
+  streamGen += 1;
+  running.value = false;
+  generatingReport.value = false;
   error.value = null;
   reportStatus.value = "";
   listOpen.value = false;
@@ -298,17 +551,19 @@ async function openConversation(id: string) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = (await res.json()) as {
       id: string;
-      messages: ChatMsg[];
+      messages: Record<string, unknown>[];
       report_id?: string | null;
       kind?: string | null;
       title?: string;
+      pending?: { kind?: string; assistant_id?: string } | null;
     };
     activeId.value = data.id;
     activeReportId.value = data.report_id ?? null;
     activeKind.value = data.kind ?? null;
-    const msgs = (data.messages ?? []).filter(
-      (m) => m.role === "user" || m.role === "assistant",
-    );
+    const msgs = (data.messages ?? [])
+      .map(normalizeMsg)
+      .filter((m): m is ChatMsg => m !== null)
+      .filter((m) => m.role === "user" || m.role === "assistant");
     const isCheckin = data.kind === "checkin";
     messages.value = msgs.length
       ? msgs
@@ -316,9 +571,21 @@ async function openConversation(id: string) {
         ? []
         : [{ id: "welcome", role: "assistant", content: WELCOME }];
     void scrollToBottom();
+    const pendingKind = data.pending?.kind;
+    const generating = msgs.find((m) => m.status === "generating");
     const hasAssistant = msgs.some(
-      (m) => m.role === "assistant" && m.content.trim(),
+      (m) => m.role === "assistant" && m.content.trim() && m.status !== "generating",
     );
+    if (pendingKind === "report") {
+      void followReport(data.id, false);
+    }
+    if (generating || pendingKind === "reply") {
+      void followReply(
+        data.id,
+        generating?.id || data.pending?.assistant_id || "",
+      );
+      return;
+    }
     if (isCheckin && !hasAssistant && !running.value && !generatingReport.value) {
       void startCheckin(data.id);
     }
@@ -334,8 +601,11 @@ function selectConversation(id: string) {
 }
 
 function startNewConversation() {
-  if (running.value || generatingReport.value) return;
   listOpen.value = false;
+  abortController?.abort();
+  streamGen += 1;
+  running.value = false;
+  generatingReport.value = false;
   if (!routeChatId()) {
     resetConversationState();
     return;
@@ -429,62 +699,7 @@ function upsertConversationMeta(
 
 async function generateReport() {
   if (!activeId.value || !canGenerateReport.value) return;
-  error.value = null;
-  reportStatus.value = "";
-  generatingReport.value = true;
-
-  try {
-    const res = await apiFetch(
-      `${API_BASE}/chats/${activeId.value}/generate-report`,
-      {
-        method: "POST",
-      },
-    );
-    if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
-
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let generatedId: string | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split("\n\n");
-      buffer = blocks.pop() ?? "";
-      for (const block of blocks) {
-        const line = block.replace(/^data: /, "");
-        if (line === "[DONE]") continue;
-        if (line === "[ERROR]") {
-          error.value = "Échec de la génération du rapport.";
-          continue;
-        }
-        if (line.startsWith("REPORT:")) {
-          const rid = line.slice("REPORT:".length);
-          generatedId = rid;
-          activeReportId.value = rid;
-          if (activeId.value)
-            upsertConversationMeta(activeId.value, undefined, rid);
-          void reloadReports();
-          continue;
-        }
-        if (line.startsWith("Erreur")) {
-          error.value = line;
-        } else if (line.trim()) {
-          reportStatus.value = line;
-        }
-      }
-    }
-    await loadConversations();
-    if (generatedId && !error.value) {
-      window.setTimeout(() => promptReportEmotions(generatedId!), 400);
-    }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : "Erreur génération rapport";
-  } finally {
-    generatingReport.value = false;
-  }
+  await followReport(activeId.value, true);
 }
 
 async function openLinkedReport() {
@@ -517,13 +732,11 @@ async function send() {
   markFresh(userMsg.id);
 
   const assistantId = `a-${Date.now()}`;
-  let aborted = false;
-  // `created_at` est posé à la fin du stream, comme côté serveur : l'heure
-  // affichée reste donc la même après un rechargement de la conversation.
   messages.value.push({
     id: assistantId,
     role: "assistant",
     content: "",
+    status: "generating",
     editProposals: [],
   });
   markFresh(assistantId);
@@ -533,8 +746,9 @@ async function send() {
   revealTarget.value = "";
   void scrollToBottom();
 
+  const gen = beginLocalStream();
   running.value = true;
-  abortController = new AbortController();
+  const state = { assistantId };
 
   try {
     const res = await apiFetch(`${API_BASE}/chat`, {
@@ -544,115 +758,22 @@ async function send() {
         message: text,
         conversation_id: activeId.value,
       }),
-      signal: abortController.signal,
+      signal: abortController?.signal,
     });
     if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
-
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let inAnswer = false;
-    let answer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split("\n\n");
-      buffer = blocks.pop() ?? "";
-
-      for (const block of blocks) {
-        const line = block.replace(/^data: /, "");
-        if (line === "[DONE]") continue;
-        if (line === "[ERROR]") {
-          error.value = "Une erreur est survenue.";
-          continue;
-        }
-        if (line.startsWith("CONVERSATION:")) {
-          const id = line.slice("CONVERSATION:".length);
-          activeId.value = id;
-          upsertConversationMeta(id);
-          if (routeChatId() !== id) {
-            void router.replace({ name: "chat", params: { id } });
-          }
-          continue;
-        }
-        if (line.startsWith("REPORT:")) {
-          activeReportId.value = line.slice("REPORT:".length);
-          if (activeId.value) {
-            upsertConversationMeta(
-              activeId.value,
-              undefined,
-              activeReportId.value,
-            );
-          }
-          continue;
-        }
-        if (line.startsWith("TITLE:")) {
-          const title = line.slice("TITLE:".length);
-          if (activeId.value) upsertConversationMeta(activeId.value, title);
-          continue;
-        }
-        if (line.startsWith("EDIT_PROPOSAL:")) {
-          try {
-            const proposal = JSON.parse(
-              line.slice("EDIT_PROPOSAL:".length),
-            ) as EditProposalData;
-            const msg = messages.value.find((m) => m.id === assistantId);
-            if (msg) {
-              msg.editProposals = msg.editProposals || [];
-              msg.editProposals.push(proposal);
-            }
-          } catch {
-            // Ignore invalid JSON
-          }
-          continue;
-        }
-        if (line === "[ANSWER_START]") {
-          inAnswer = true;
-          statusLine.value = "";
-          continue;
-        }
-        if (line === "[ANSWER_END]") {
-          inAnswer = false;
-          continue;
-        }
-        if (inAnswer) {
-          answer += line.replace(/\\n/g, "\n");
-          const msg = messages.value.find((m) => m.id === assistantId);
-          if (msg) msg.content = answer;
-          queueReveal(answer);
-        } else if (line.startsWith("Erreur")) {
-          error.value = line;
-        } else if (line.trim()) {
-          statusLine.value = line;
-        }
-      }
-    }
-
-    const msg = messages.value.find((m) => m.id === assistantId);
-    if (msg && !msg.content.trim()) {
-      msg.content = error.value
-        ? `Désolé — ${error.value}`
-        : "Aucune réponse reçue. Vérifie CURSOR_API_KEY et relance l’API.";
-    }
-    if (msg) msg.created_at = new Date().toISOString();
-
+    await consumeChatSse(res, state);
     await loadConversations();
   } catch (e) {
-    if ((e as Error).name !== "AbortError") {
-      error.value = e instanceof Error ? e.message : "Erreur inconnue";
-      const msg = messages.value.find((m) => m.id === assistantId);
-      if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
-      if (msg) msg.created_at = new Date().toISOString();
-    } else {
-      aborted = true;
-    }
+    if ((e as Error).name === "AbortError") return;
+    error.value = e instanceof Error ? e.message : "Erreur inconnue";
+    const msg = messages.value.find((m) => m.id === state.assistantId);
+    if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
   } finally {
+    if (gen !== streamGen) return;
     running.value = false;
     abortController = null;
     statusLine.value = "";
-    const done = messages.value.find((m) => m.id === assistantId);
+    const done = messages.value.find((m) => m.id === state.assistantId);
     if (done?.content) {
       queueReveal(done.content);
       if (revealed.value.length >= revealTarget.value.length) {
@@ -663,7 +784,6 @@ async function send() {
       streamingId.value = null;
     }
     if (
-      !aborted &&
       !error.value &&
       done?.content &&
       activeReportId.value &&
@@ -688,6 +808,7 @@ async function startCheckin(conversationId: string) {
     id: assistantId,
     role: "assistant",
     content: "",
+    status: "generating",
     editProposals: [],
   });
   markFresh(assistantId);
@@ -697,11 +818,12 @@ async function startCheckin(conversationId: string) {
   revealTarget.value = "";
   void scrollToBottom();
 
+  const gen = beginLocalStream();
   running.value = true;
-  abortController = new AbortController();
   activeKind.value = "checkin";
   activeId.value = conversationId;
   upsertConversationMeta(conversationId, "Comment ça va ?");
+  const state = { assistantId };
 
   try {
     const res = await apiFetch(`${API_BASE}/chat`, {
@@ -712,82 +834,23 @@ async function startCheckin(conversationId: string) {
         conversation_id: conversationId,
         checkin: true,
       }),
-      signal: abortController.signal,
+      signal: abortController?.signal,
     });
     if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
-
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let inAnswer = false;
-    let answer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split("\n\n");
-      buffer = blocks.pop() ?? "";
-
-      for (const block of blocks) {
-        const line = block.replace(/^data: /, "");
-        if (line === "[DONE]" || line === "[ERROR]") continue;
-        if (line.startsWith("CONVERSATION:")) {
-          const id = line.slice("CONVERSATION:".length);
-          activeId.value = id;
-          upsertConversationMeta(id, "Comment ça va ?");
-          if (routeChatId() !== id) {
-            void router.replace({ name: "chat", params: { id } });
-          }
-          continue;
-        }
-        if (line.startsWith("TITLE:")) {
-          const title = line.slice("TITLE:".length);
-          if (activeId.value) upsertConversationMeta(activeId.value, title);
-          continue;
-        }
-        if (line === "[ANSWER_START]") {
-          inAnswer = true;
-          statusLine.value = "";
-          continue;
-        }
-        if (line === "[ANSWER_END]") {
-          inAnswer = false;
-          continue;
-        }
-        if (inAnswer) {
-          answer += line.replace(/\\n/g, "\n");
-          const msg = messages.value.find((m) => m.id === assistantId);
-          if (msg) msg.content = answer;
-          queueReveal(answer);
-        } else if (line.startsWith("Erreur")) {
-          error.value = line;
-        } else if (line.trim() && !line.startsWith("REPORT:") && !line.startsWith("EDIT_PROPOSAL:")) {
-          statusLine.value = line;
-        }
-      }
-    }
-
-    const msg = messages.value.find((m) => m.id === assistantId);
-    if (msg && !msg.content.trim()) {
-      msg.content = error.value
-        ? `Désolé — ${error.value}`
-        : "Je n’ai pas réussi à ouvrir le check-in. Réessaie dans un instant.";
-    }
-    if (msg) msg.created_at = new Date().toISOString();
+    await consumeChatSse(res, state);
     await loadConversations();
   } catch (e) {
-    if ((e as Error).name !== "AbortError") {
-      error.value = e instanceof Error ? e.message : "Erreur inconnue";
-      const msg = messages.value.find((m) => m.id === assistantId);
-      if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
-      checkinKickoffFor = null;
-    }
+    if ((e as Error).name === "AbortError") return;
+    error.value = e instanceof Error ? e.message : "Erreur inconnue";
+    const msg = messages.value.find((m) => m.id === state.assistantId);
+    if (msg && !msg.content) msg.content = `Erreur : ${error.value}`;
+    checkinKickoffFor = null;
   } finally {
+    if (gen !== streamGen) return;
     running.value = false;
     abortController = null;
     statusLine.value = "";
-    const done = messages.value.find((m) => m.id === assistantId);
+    const done = messages.value.find((m) => m.id === state.assistantId);
     if (done?.content) {
       queueReveal(done.content);
       if (revealed.value.length >= revealTarget.value.length) {
@@ -801,7 +864,6 @@ async function startCheckin(conversationId: string) {
 }
 
 async function openCheckinFromNotif() {
-  if (running.value || generatingReport.value) return;
   try {
     const res = await apiFetch(`${API_BASE}/chats/checkin`, { method: "POST" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -837,10 +899,6 @@ function onComposerFocus() {
   }, 350);
 }
 
-function cancel() {
-  abortController?.abort();
-}
-
 function formatWhen(iso: string | null) {
   if (!iso) return "";
   try {
@@ -855,6 +913,10 @@ watch(
   () => routeChatId(),
   (id) => {
     if (!id) {
+      abortController?.abort();
+      streamGen += 1;
+      running.value = false;
+      generatingReport.value = false;
       if (activeId.value) resetConversationState();
       return;
     }
@@ -913,8 +975,7 @@ onMounted(() => {
         <div class="flex items-center gap-2 border-b border-[var(--border)] p-3">
           <button
             type="button"
-            class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition hover:opacity-90 disabled:opacity-50"
-            :disabled="running || generatingReport"
+            class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition hover:opacity-90"
             @click="startNewConversation"
           >
             <Plus :size="16" />
@@ -953,7 +1014,6 @@ onMounted(() => {
                 ? 'bg-[var(--primary)]/12 text-[var(--foreground)]'
                 : 'hover:bg-[var(--accent)] text-[var(--foreground)]'
             "
-            :disabled="running || generatingReport"
             @click="selectConversation(c.id)"
           >
             <div class="flex items-start gap-2">
@@ -991,6 +1051,8 @@ onMounted(() => {
               <template v-if="c.message_count">
                 · {{ c.message_count }} msg</template
               >
+              <template v-if="c.pending === 'reply'"> · répond…</template>
+              <template v-else-if="c.pending === 'report'"> · rapport…</template>
               <template v-if="c.report_id"> · rapport</template>
               <template v-else-if="c.kind === 'checkin'"> · check-in</template>
             </p>
@@ -1110,7 +1172,9 @@ onMounted(() => {
               <div
                 class="mt-0.5 h-7 w-7 shrink-0 overflow-hidden rounded-full ring-1 ring-[var(--border)] sm:h-8 sm:w-8"
                 :class="
-                  m.role === 'assistant' && streamingId === m.id && !bubbleText(m)
+                  m.role === 'assistant' &&
+                  ((streamingId === m.id && !bubbleText(m)) ||
+                    m.status === 'generating')
                     ? 'chat-avatar-think'
                     : ''
                 "
@@ -1221,12 +1285,13 @@ onMounted(() => {
               <Transition name="chat-send" mode="out-in">
                 <button
                   v-if="running"
-                  key="stop"
+                  key="wait"
                   type="button"
-                  class="mb-0.5 inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700"
-                  @click="cancel"
+                  disabled
+                  class="mb-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] opacity-80"
+                  title="Réponse en cours — tu peux quitter, ça continue"
                 >
-                  Stop
+                  <Loader :size="18" class="animate-spin" />
                 </button>
                 <button
                   v-else

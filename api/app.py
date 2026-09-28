@@ -36,8 +36,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from api.deps import ensure_canonical_vault_files
     from api.push_reminders import reminder_loop
 
+    ensure_canonical_vault_files()
     task = asyncio.create_task(reminder_loop())
     try:
         yield

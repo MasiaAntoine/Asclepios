@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from datetime import date
 from typing import AsyncGenerator
 
@@ -12,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from api import config
-from api.deps import dump_json, get_rapport_template, load_json, slugify, sse, stream_cmd
+from api.deps import dump_json, get_rapport_template, load_json, push_vault_now, slugify, sse, stream_cmd
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -72,16 +71,102 @@ def _normalize_emotions(ids: list[str]) -> list[str]:
     return out
 
 
+_INFER_CUES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "tristesse",
+        (
+            "tristesse", "triste", "deuil", "solitude", "vide affectif",
+            "pleur", "nostalgie", "isolement", "rupture", "abandon",
+            "suicid", "envie de mourir", "en finir",
+        ),
+    ),
+    (
+        "anxiete",
+        (
+            "angoisse", "anxiété", "anxiete", "panique", "peur", "hypervigilance",
+            "stress", "rumination", "insomnie", "crainte", "inquiét",
+        ),
+    ),
+    (
+        "colere",
+        (
+            "colère", "colere", "rage", "révolte", "rejet", "injustice",
+            "frustration", "exaspér",
+        ),
+    ),
+    (
+        "fatigue",
+        (
+            "fatigue", "épuisement", "epuisement", "hypersomnie", "sédation",
+            "sedation", "épuisé", "epuise", "épuis",
+        ),
+    ),
+    (
+        "espoir",
+        (
+            "espoir", "reconstruction", "progrès", "progres",
+            "discernement", "affirmation", "reprise",
+        ),
+    ),
+    (
+        "calme",
+        (
+            "calme", "apaisement", "détachement", "detachement",
+            "régulation", "regulation", "ancrage",
+        ),
+    ),
+    (
+        "soulagement",
+        (
+            "soulagement", "soulagé", "soulage", "apaisé", "apaise",
+            "libération", "liberation", "abstinence",
+        ),
+    ),
+    (
+        "joie",
+        (
+            "joie", "fierté", "fierte", "heureux", "heureuse", "plaisir",
+            "sociabilisation", "fête", "fete",
+        ),
+    ),
+)
+
+
+def infer_emotions_from_text(text: str) -> list[str]:
+    """1 à 3 émotions à partir du titre, des thèmes et du corps du rapport."""
+    blob = (text or "").lower()
+    if not blob.strip():
+        return []
+    scores: dict[str, int] = {e: 0 for e in ALLOWED_EMOTIONS}
+    for emotion, cues in _INFER_CUES:
+        for cue in cues:
+            scores[emotion] += blob.count(cue)
+    ranked = sorted(
+        ((emotion, score) for emotion, score in scores.items() if score > 0),
+        key=lambda pair: (-pair[1], ALLOWED_EMOTIONS.index(pair[0])),
+    )
+    picked = [emotion for emotion, score in ranked[:3] if score >= 1]
+    return _normalize_emotions(picked)
+
+
+def save_emotions_if_empty(report_id: str, markdown: str) -> list[str]:
+    """Remplit les émotions manquantes d'après le texte du rapport. Ne touche pas une saisie existante."""
+    safe = _safe_report_id(report_id)
+    data = _load_emotions()
+    current = data.get(safe) or []
+    if current:
+        return current
+    inferred = infer_emotions_from_text(markdown)
+    if not inferred:
+        return []
+    data[safe] = inferred
+    config.RAPPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    dump_json(config.RAPPORTS_EMOTIONS_PATH, data)
+    return inferred
+
+
 def _push_vault() -> None:
-    try:
-        subprocess.run(
-            [config.PYTHON, str(config.SCRIPT_SYNC), "push"],
-            cwd=str(config.ROOT),
-            check=False,
-            capture_output=True,
-        )
-    except Exception:
-        pass
+    push_vault_now()
 
 
 @router.get("/emotions")
@@ -124,6 +209,15 @@ async def call_ai(text: str) -> str:
         raise ValueError("CURSOR_API_KEY non défini dans .env")
 
     template = get_rapport_template()
+    from api.medical_context import build_suivi_context
+
+    suivi = build_suivi_context(config.VAULT_DIR)
+    suivi_block = (
+        f"DONNÉES DE SUIVI DU DOSSIER (humeur, sport, émotions des rapports — "
+        f"à croiser seulement si c'est pertinent pour le texte source) :\n\n{suivi}\n\n"
+        if suivi.strip()
+        else ""
+    )
     prompt = (
         "Tu es un assistant médical personnel. "
         "À partir du texte fourni, génère un rapport médical structuré en Markdown.\n\n"
@@ -133,6 +227,7 @@ async def call_ai(text: str) -> str:
         "- Conserve la première personne si le texte source l'utilise.\n"
         f"- Date de rédaction : {date.today().strftime('%d/%m/%Y')}\n\n"
         f"FORMAT REQUIS :\n{template}\n\n"
+        f"{suivi_block}"
         f"TEXTE SOURCE :\n\n{text}"
     )
 
@@ -189,6 +284,7 @@ async def generate_for_doctor(body: GenerateForDoctorRequest):
                 date_to=body.date_to,
                 include=body.include,
             )
+            save_emotions_if_empty(stem, _md)
         except KeyError:
             yield "data: Médecin introuvable\n\n".encode()
             yield b"data: [ERROR]\n\n"
@@ -228,6 +324,7 @@ async def generate_with_ai(body: GenerateRequest):
         filename = f"{date.today().strftime('%Y-%m-%d')}-{slugify(title)}.md"
         filepath = config.RAPPORTS_DIR / filename
         filepath.write_text(markdown, encoding="utf-8")
+        save_emotions_if_empty(filename[:-3], markdown)
         yield "data: Document sauvegardé\n\n".encode()
 
         async for chunk in stream_cmd("Sync", [config.PYTHON, str(config.SCRIPT_SYNC), "push"]):

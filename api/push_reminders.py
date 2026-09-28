@@ -222,6 +222,51 @@ def check_daily_sport() -> dict[str, int]:
     return {"sport": 1 if result.get("sent", 0) > 0 else 0}
 
 
+def check_weekly_poids() -> dict[str, int]:
+    from api.poids import has_poids_in_iso_week, poids_notify, weekday_label
+    from api.push_service import send_push, subscription_count
+
+    if not config.vapid_is_configured():
+        return {"poids": 0}
+    if subscription_count() == 0:
+        return {"poids": 0}
+
+    weekday, notify = poids_notify()
+    if weekday is None or not notify:
+        return {"poids": 0}
+
+    now = datetime.now(PARIS)
+    hour, minute = (int(p) for p in notify.split(":"))
+    if now.weekday() < weekday:
+        return {"poids": 0}
+    if now.weekday() == weekday and (now.hour, now.minute) < (hour, minute):
+        return {"poids": 0}
+
+    iso = now.isocalendar()
+    year, week = int(iso.year), int(iso.week)
+    if has_poids_in_iso_week(year, week):
+        return {"poids": 0}
+
+    sent_map = _load_sent()
+    key = f"poids|{year}-W{week:02d}"
+    if key in sent_map:
+        return {"poids": 0}
+
+    day_name = weekday_label(weekday)
+    result = send_push(
+        {
+            "title": "C’est le jour de la pesée",
+            "body": f"Une mesure cette semaine ({day_name}) — le matin, à jeun, dans les mêmes conditions.",
+            "url": "/poids?add=1",
+            "tag": "asclepios-poids",
+        },
+        ttl=12 * 3600,
+    )
+    sent_map[key] = datetime.now(timezone.utc).isoformat()
+    _save_sent(sent_map)
+    return {"poids": 1 if result.get("sent", 0) > 0 else 0}
+
+
 def check_alive_checkin() -> dict[str, int]:
     from api.checkin import (
         notification_copy,
@@ -283,6 +328,12 @@ async def reminder_loop() -> None:
             pass
         try:
             await asyncio.to_thread(check_daily_sport)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        try:
+            await asyncio.to_thread(check_weekly_poids)
         except asyncio.CancelledError:
             raise
         except Exception:

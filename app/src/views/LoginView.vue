@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import logoIconUrl from '@/assets/logo-icon.png'
+import logoIconUrl from '@/assets/logo-icon.jpg'
 import { useAuth } from '@/composables/useAuth'
 import { KeyRound, Loader2, Lock } from '@lucide/vue'
 

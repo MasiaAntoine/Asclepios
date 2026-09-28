@@ -154,7 +154,8 @@ def load_log() -> dict[str, Any]:
     raw = data.get("sessions")
     if not isinstance(raw, list):
         return {"sessions": []}
-    sessions = [_normalize_session(item) for item in raw]
+    program = _program_by_id()
+    sessions = [_normalize_session(item, program) for item in raw]
     out = [s for s in sessions if s]
     out.sort(key=lambda s: s["date"])
     return {"sessions": out}
@@ -180,6 +181,51 @@ def today_complete(now: datetime | None = None) -> bool:
     return all(exo["id"] in answered for exo in program)
 
 
+def _program_by_id() -> dict[str, dict[str, Any]]:
+    return {str(e["id"]): e for e in load_program()["exercises"]}
+
+
+def _snapshot_log_item(
+    item: dict[str, Any],
+    *,
+    program: dict[str, dict[str, Any]] | None = None,
+    previous: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    exo_id = str(item.get("exercise_id") or "").strip()[:40]
+    if not exo_id or "done" not in item:
+        return None
+    prev = previous or {}
+    exo = (program or {}).get(exo_id) or {}
+    name = str(item.get("name") or prev.get("name") or exo.get("name") or exo_id).strip()[:80]
+    sets = _opt_int(item.get("sets"), 1, 20)
+    if sets is None:
+        sets = _opt_int(prev.get("sets"), 1, 20)
+    if sets is None:
+        sets = _opt_int(exo.get("sets"), 1, 20) or 1
+    reps = _opt_int(item.get("reps"), 1, 200)
+    if reps is None:
+        reps = _opt_int(prev.get("reps"), 1, 200)
+    if reps is None:
+        reps = _opt_int(exo.get("reps"), 1, 200)
+    seconds = _opt_int(item.get("seconds"), 5, 600)
+    if seconds is None:
+        seconds = _opt_int(prev.get("seconds"), 5, 600)
+    if seconds is None:
+        seconds = _opt_int(exo.get("seconds"), 5, 600)
+    note = str(item.get("note") if item.get("note") not in (None, "") else prev.get("note") or exo.get("note") or "").strip()[:200]
+    if reps is None and seconds is None:
+        reps = 10
+    return {
+        "exercise_id": exo_id,
+        "name": name or exo_id,
+        "sets": sets,
+        "reps": reps,
+        "seconds": seconds,
+        "note": note,
+        "done": bool(item.get("done")),
+    }
+
+
 def upsert_session(day: str, items: list[dict[str, Any]], at: datetime | None = None) -> dict[str, Any]:
     if not _DATE_RE.match(day):
         raise ValueError("Date invalide")
@@ -187,6 +233,13 @@ def upsert_session(day: str, items: list[dict[str, Any]], at: datetime | None = 
     if day > now.date().isoformat():
         raise ValueError("Impossible de noter un jour futur")
 
+    program = _program_by_id()
+    previous = session_for(day)
+    prev_by_id = {
+        str(row.get("exercise_id") or ""): row
+        for row in (previous or {}).get("items") or []
+        if isinstance(row, dict)
+    }
     cleaned_items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
@@ -195,15 +248,11 @@ def upsert_session(day: str, items: list[dict[str, Any]], at: datetime | None = 
         exo_id = str(item.get("exercise_id") or "").strip()
         if not exo_id or exo_id in seen:
             continue
-        if "done" not in item:
+        snap = _snapshot_log_item(item, program=program, previous=prev_by_id.get(exo_id))
+        if not snap:
             continue
         seen.add(exo_id)
-        cleaned_items.append(
-            {
-                "exercise_id": exo_id[:40],
-                "done": bool(item.get("done")),
-            }
-        )
+        cleaned_items.append(snap)
 
     stamp = now.isoformat(timespec="minutes")
     log = load_log()
@@ -217,7 +266,10 @@ def upsert_session(day: str, items: list[dict[str, Any]], at: datetime | None = 
     return session
 
 
-def _normalize_session(item: Any) -> dict[str, Any] | None:
+def _normalize_session(
+    item: Any,
+    program: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
     day = str(item.get("date") or "").strip()
@@ -235,6 +287,7 @@ def _normalize_session(item: Any) -> dict[str, Any] | None:
         if not exo_id or exo_id in seen or "done" not in row:
             continue
         seen.add(exo_id)
-        items.append({"exercise_id": exo_id, "done": bool(row.get("done"))})
+        snap = _snapshot_log_item(row, program=program)
+        items.append(snap or {"exercise_id": exo_id, "done": bool(row.get("done"))})
     at = str(item.get("at") or "").strip()
     return {"date": day, "at": at, "items": items}

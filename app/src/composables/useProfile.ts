@@ -114,6 +114,10 @@ export interface Profil {
   }
   /** Heure Europe/Paris du rappel sport quotidien, ex. "18:30". */
   sport_notify_at?: string
+  /** Jour du rappel de pesée (0 = lundi … 6 = dimanche). */
+  poids_notify_weekday?: number
+  /** Heure Europe/Paris du rappel de pesée hebdomadaire, ex. "07:30". */
+  poids_notify_at?: string
   parents: {
     pere: Personne
     mere: Personne

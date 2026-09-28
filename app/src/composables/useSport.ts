@@ -11,6 +11,11 @@ const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api'
 export interface SportLogItem {
   exercise_id: string
   done: boolean
+  name?: string
+  sets?: number
+  reps?: number | null
+  seconds?: number | null
+  note?: string
 }
 
 export interface SportSession {
@@ -62,7 +67,25 @@ function asSession(raw: unknown): SportSession | null {
     const exerciseId = String(rec.exercise_id || '').trim()
     if (!exerciseId || seen.has(exerciseId)) continue
     seen.add(exerciseId)
-    items.push({ exercise_id: exerciseId, done: Boolean(rec.done) })
+    items.push({
+      exercise_id: exerciseId,
+      done: Boolean(rec.done),
+      name: String(rec.name || '').trim() || undefined,
+      sets: Number.isFinite(Number(rec.sets)) && Number(rec.sets) > 0 ? Number(rec.sets) : undefined,
+      reps:
+        rec.reps == null || rec.reps === ''
+          ? null
+          : Number.isFinite(Number(rec.reps)) && Number(rec.reps) > 0
+            ? Number(rec.reps)
+            : null,
+      seconds:
+        rec.seconds == null || rec.seconds === ''
+          ? null
+          : Number.isFinite(Number(rec.seconds)) && Number(rec.seconds) > 0
+            ? Number(rec.seconds)
+            : null,
+      note: String(rec.note || '').trim() || undefined,
+    })
   }
   return { date, at: String(row.at || ''), items }
 }
@@ -247,10 +270,23 @@ export function useSport() {
 
   async function answerExercise(exerciseId: string, done: boolean) {
     const map = { ...todayAnswers.value, [exerciseId]: done }
-    const items = Object.entries(map).map(([id, value]) => ({
-      exercise_id: id,
-      done: value,
-    }))
+    const byId = new Map(exercises.value.map((e) => [e.id, e]))
+    const prevById = new Map(
+      (todaySession.value?.items ?? []).map((item) => [item.exercise_id, item]),
+    )
+    const items: SportLogItem[] = Object.entries(map).map(([id, value]) => {
+      const exo = byId.get(id)
+      const prev = prevById.get(id)
+      return {
+        exercise_id: id,
+        done: value,
+        name: prev?.name || exo?.name || id,
+        sets: prev?.sets ?? exo?.sets ?? 1,
+        reps: prev?.reps ?? exo?.reps ?? null,
+        seconds: prev?.seconds ?? exo?.seconds ?? null,
+        note: prev?.note || exo?.note || '',
+      }
+    })
     await saveTodayItems(items)
   }
 

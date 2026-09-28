@@ -6,7 +6,9 @@ import {
   formatOrdonnanceDate,
   ordonnancePdfFileUrl,
   type OrdonnanceDetail,
+  type OrdonnanceMedication,
 } from '@/composables/useOrdonnances'
+import { formatDose, formatQty, resolveEffectiveDose } from '@/lib/dose'
 import { useProfile } from '@/composables/useProfile'
 import PageShell from '@/components/PageShell.vue'
 import {
@@ -71,6 +73,16 @@ function go(id: string | null) {
     return
   }
   void router.push(`/ordonnances/${encodeURIComponent(id)}`)
+}
+
+function medEffective(med: OrdonnanceMedication) {
+  return resolveEffectiveDose(med.strength || med.dose, med.posology)
+}
+
+function medDoseHint(med: OrdonnanceMedication): string | null {
+  const resolved = medEffective(med)
+  if (!resolved.multiplied || !resolved.strength || resolved.quantity == null) return null
+  return `${formatQty(resolved.quantity)} × ${formatDose(resolved.strength.value, resolved.strength.unit)}`
 }
 </script>
 
@@ -257,10 +269,16 @@ function go(id: string | null) {
                   {{ med.brand }}
                 </span>
                 <span
-                  v-if="med.dose"
+                  v-if="medEffective(med).label"
                   class="rounded-full bg-[var(--accent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-foreground)]"
                 >
-                  {{ med.dose }}
+                  {{ medEffective(med).label }}
+                </span>
+                <span
+                  v-if="medDoseHint(med)"
+                  class="rounded-full bg-[var(--muted)] px-2 py-0.5 text-[10px] font-medium text-[var(--muted-foreground)]"
+                >
+                  {{ medDoseHint(med) }}
                 </span>
                 <span
                   v-if="med.form"

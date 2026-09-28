@@ -16,6 +16,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api import config
+from api.chat_jobs import (
+    begin_job,
+    emit,
+    finish_job,
+    get_job,
+    notify_chat_ready,
+    stream_job,
+)
 from api.chat_store import chat_path, ensure_chats_dir, load_chat, now_iso, save_chat
 from api.conversation_behavior import ConversationBehaviorProfile
 from api.deps import slugify, sse, stream_cmd
@@ -26,7 +34,7 @@ router = APIRouter(tags=["chats"])
 _BEHAVIOR_PROFILE = ConversationBehaviorProfile(config.VAULT_DIR)
 
 _MEDICAL_SYSTEM = """Tu es Asclepios, l'assistant IA du dossier médical personnel de l'utilisateur.
-Tu as accès au contexte fourni (profil, poids, humeur 0–10 horodatée, programme sport et séances, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
+Tu as accès au contexte fourni (profil, poids, humeur 0–10 horodatée, programme sport et séances, émotions associées aux rapports, analyses, traitements, médicaments, médecins, rapports, dossiers personnes/relations, agenda médical)
 ET à l'historique COMPLET de cette conversation.
 Tu travailles avec le répertoire vault/ comme répertoire de travail : tu PEUX ouvrir les fichiers images (jpg/png) listés dans le contexte.
 
@@ -414,11 +422,290 @@ def _conversation_as_source(chat: dict) -> str:
         content = (m.get("content") or "").strip()
         if not content or role not in ("user", "assistant"):
             continue
+        if m.get("status") == "generating":
+            continue
         label = "Patient" if role == "user" else "Asclepios"
         when = m.get("created_at") or ""
         prefix = f"[{when}] " if when else ""
         lines.append(f"{prefix}{label} :\n{content}\n")
     return "\n".join(lines)
+
+
+def _set_pending(chat: dict, kind: str, assistant_id: str | None = None) -> None:
+    pending: dict = {"kind": kind, "started_at": now_iso()}
+    if assistant_id:
+        pending["assistant_id"] = assistant_id
+    chat["pending"] = pending
+
+
+def _clear_pending(chat: dict) -> None:
+    chat.pop("pending", None)
+
+
+def _history_for_prompt(messages: list, *, skip_ids: set[str] | None = None) -> list[dict]:
+    skip = skip_ids or set()
+    out: list[dict] = []
+    for turn in messages:
+        if turn.get("id") in skip:
+            continue
+        if turn.get("status") == "generating":
+            continue
+        out.append(turn)
+    return out
+
+
+async def _push_vault_quiet() -> None:
+    try:
+        async for _ in stream_cmd("Sync", [config.PYTHON, str(config.SCRIPT_SYNC), "push"]):
+            pass
+    except Exception:
+        pass
+
+
+async def _run_reply_job(
+    job,
+    *,
+    chat_id: str,
+    message: str,
+    opening: bool,
+    kind: str | None,
+    assistant_id: str,
+) -> None:
+    try:
+        chat = load_chat(chat_id)
+        await emit(job, f"CONVERSATION:{chat_id}")
+        if chat.get("report_id"):
+            await emit(job, f"REPORT:{chat['report_id']}")
+        await emit(job, f"ASSISTANT:{assistant_id}")
+        await emit(job, "Chargement du dossier médical…")
+        from api.medical_context import build_medical_context
+
+        context = await asyncio.to_thread(build_medical_context, config.VAULT_DIR)
+        await emit(job, f"Contexte prêt ({len(context)} caractères)")
+
+        vision_images = _resolve_vision_images(message or "")
+        if vision_images:
+            names = ", ".join(p.name for p in vision_images)
+            await emit(job, f"Vision : {len(vision_images)} photo(s) ouverte(s) — {names}")
+
+        await emit(job, "Appel au modèle IA…")
+        history = _history_for_prompt(
+            list(chat.get("messages") or []),
+            skip_ids={assistant_id},
+        )
+        if not opening:
+            user_ids = [
+                m.get("id")
+                for m in reversed(history)
+                if m.get("role") == "user"
+            ]
+            if user_ids:
+                history = [m for m in history if m.get("id") != user_ids[0]]
+
+        prompt = _build_chat_prompt(
+            message,
+            history,
+            context,
+            kind=kind,
+            opening=opening,
+        )
+        raw_answer = await _chat_ai(prompt, vision_images)
+        if not raw_answer:
+            raise RuntimeError("réponse vide")
+
+        answer, edit_proposals = _extract_edit_proposals(raw_answer)
+        for proposal in edit_proposals:
+            proposal["status"] = "pending"
+            proposal["created_at"] = now_iso()
+            await emit(job, "EDIT_PROPOSAL:" + json.dumps(proposal, ensure_ascii=False))
+
+        await emit(job, "[ANSWER_START]")
+        for i in range(0, len(answer), 80):
+            piece = answer[i : i + 80].replace("\n", "\\n")
+            await emit(job, piece)
+            await asyncio.sleep(0)
+        await emit(job, "[ANSWER_END]")
+
+        chat = load_chat(chat_id)
+        found = False
+        for msg in chat.get("messages") or []:
+            if msg.get("id") == assistant_id:
+                msg["content"] = answer
+                msg["created_at"] = now_iso()
+                msg.pop("status", None)
+                if edit_proposals:
+                    msg["edit_proposals"] = edit_proposals
+                found = True
+                break
+        if not found:
+            assistant_msg = {
+                "id": assistant_id,
+                "role": "assistant",
+                "content": answer,
+                "created_at": now_iso(),
+            }
+            if edit_proposals:
+                assistant_msg["edit_proposals"] = edit_proposals
+            chat.setdefault("messages", []).append(assistant_msg)
+        _clear_pending(chat)
+        chat["updated_at"] = now_iso()
+        save_chat(chat)
+        await emit(job, "Réponse enregistrée dans le vault")
+        await emit(job, f"TITLE:{chat.get('title') or 'Conversation'}")
+        asyncio.create_task(_push_vault_quiet())
+        await emit(job, "[DONE]")
+        notify_chat_ready(
+            chat_id,
+            title="Asclepios a répondu",
+            body=answer,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        try:
+            await emit(job, f"Erreur : {exc}")
+            await emit(job, "[ERROR]")
+            chat = load_chat(chat_id)
+            for msg in chat.get("messages") or []:
+                if msg.get("id") == assistant_id:
+                    msg["content"] = f"Désolé — {exc}"
+                    msg["status"] = "error"
+                    msg["created_at"] = now_iso()
+                    break
+            _clear_pending(chat)
+            chat["updated_at"] = now_iso()
+            save_chat(chat)
+        except Exception:
+            pass
+    finally:
+        await finish_job(job)
+
+
+async def _run_report_job(job, *, chat_id: str) -> None:
+    from datetime import date
+
+    try:
+        chat = load_chat(chat_id)
+        existing_id = chat.get("report_id")
+        regenerating = bool(existing_id)
+        await emit(
+            job,
+            "Régénération du rapport lié…" if regenerating else "Génération du rapport depuis la conversation…",
+        )
+        source = _conversation_as_source(chat)
+        markdown = await call_ai(source)
+        if not markdown.strip():
+            raise RuntimeError("réponse vide")
+
+        if regenerating and existing_id:
+            report_id = re.sub(r"[^a-zA-Z0-9_\-]", "", existing_id)
+            filename = f"{report_id}.md"
+            filepath = config.RAPPORTS_DIR / filename
+        else:
+            m = re.search(r"^#\s+(.+)", markdown, re.MULTILINE)
+            title = m.group(1).strip() if m else (chat.get("title") or "conversation")
+            filename = f"{date.today().strftime('%Y-%m-%d')}-{slugify(title)}.md"
+            filepath = config.RAPPORTS_DIR / filename
+            if filepath.exists():
+                stem = filename[:-3]
+                filename = f"{stem}-{uuid.uuid4().hex[:4]}.md"
+                filepath = config.RAPPORTS_DIR / filename
+            report_id = filename[:-3]
+
+        filepath.write_text(markdown, encoding="utf-8")
+        from api.routers.reports import save_emotions_if_empty
+
+        save_emotions_if_empty(report_id, markdown)
+        await emit(
+            job,
+            "\u2713 Rapport " + ("écrasé" if regenerating else "créé") + f" : {filename}",
+        )
+
+        chat = load_chat(chat_id)
+        chat["report_id"] = report_id
+        chat["updated_at"] = now_iso()
+        _clear_pending(chat)
+        save_chat(chat)
+        await emit(job, "\u2713 Conversation liée au rapport (suppression désactivée)")
+        asyncio.create_task(_push_vault_quiet())
+        await emit(job, f"REPORT:{report_id}")
+        await emit(job, "[DONE]")
+        notify_chat_ready(
+            chat_id,
+            title="Ton rapport est prêt",
+            body=chat.get("title") or filename,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        try:
+            await emit(job, f"Erreur IA : {exc}")
+            await emit(job, "[ERROR]")
+            chat = load_chat(chat_id)
+            _clear_pending(chat)
+            save_chat(chat)
+        except Exception:
+            pass
+    finally:
+        await finish_job(job)
+
+
+def _resume_or_restart_reply(chat: dict):
+    chat_id = chat["id"]
+    live = get_job(chat_id, "reply")
+    if live and not live.done:
+        return live
+    pending = chat.get("pending") if isinstance(chat.get("pending"), dict) else None
+    if not pending or pending.get("kind") != "reply":
+        return None
+    assistant_id = str(pending.get("assistant_id") or "")
+    asst = next(
+        (m for m in (chat.get("messages") or []) if m.get("id") == assistant_id),
+        None,
+    )
+    if asst and (asst.get("content") or "").strip() and asst.get("status") != "generating":
+        _clear_pending(chat)
+        save_chat(chat)
+        return None
+    if not assistant_id:
+        assistant_id = f"a-{uuid.uuid4().hex[:12]}"
+    last_user = next(
+        (
+            m
+            for m in reversed(chat.get("messages") or [])
+            if m.get("role") == "user"
+        ),
+        None,
+    )
+    opening = chat.get("kind") == "checkin" and not last_user
+    job = begin_job(chat_id, "reply", assistant_id=assistant_id)
+    asyncio.create_task(
+        _run_reply_job(
+            job,
+            chat_id=chat_id,
+            message=str((last_user or {}).get("content") or ""),
+            opening=opening,
+            kind=str(chat.get("kind") or "") or None,
+            assistant_id=assistant_id,
+        )
+    )
+    return job
+
+
+def _resume_or_restart_report(chat: dict):
+    chat_id = chat["id"]
+    live = get_job(chat_id, "report")
+    if live and not live.done:
+        return live
+    pending = chat.get("pending") if isinstance(chat.get("pending"), dict) else None
+    if not pending or pending.get("kind") != "report":
+        return None
+    if chat.get("report_id") and pending.get("started_at"):
+        # If a report already exists and job died after write, just clear.
+        pass
+    job = begin_job(chat_id, "report")
+    asyncio.create_task(_run_report_job(job, chat_id=chat_id))
+    return job
 
 
 @router.get("/api/chats")
@@ -436,6 +723,7 @@ def list_chats() -> dict:
             if m.get("role") == "user" and (m.get("content") or "").strip():
                 preview = (m["content"] or "").strip()[:80]
                 break
+        pending = data.get("pending") if isinstance(data.get("pending"), dict) else None
         items.append({
             "id": data.get("id", path.stem),
             "title": data.get("title") or "Sans titre",
@@ -445,6 +733,7 @@ def list_chats() -> dict:
             "preview": preview,
             "report_id": data.get("report_id"),
             "kind": data.get("kind"),
+            "pending": (pending or {}).get("kind"),
         })
     items.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
     return {"conversations": items}
@@ -508,79 +797,63 @@ async def generate_report_from_chat(chat_id: str):
     msgs = [
         m
         for m in (chat.get("messages") or [])
-        if m.get("role") in ("user", "assistant") and (m.get("content") or "").strip()
+        if m.get("role") in ("user", "assistant")
+        and (m.get("content") or "").strip()
+        and m.get("status") != "generating"
     ]
     if len(msgs) < 1:
         raise HTTPException(status_code=400, detail="Conversation vide")
 
-    async def stream() -> AsyncGenerator[bytes, None]:
-        from datetime import date
+    live = get_job(chat_id, "report")
+    if live and not live.done:
+        return sse(stream_job(live))
 
-        existing_id = chat.get("report_id")
-        regenerating = bool(existing_id)
-        yield (
-            "data: "
-            + ("Régénération du rapport lié…" if regenerating else "Génération du rapport depuis la conversation…")
-            + "\n\n"
-        ).encode()
+    _set_pending(chat, "report")
+    chat["updated_at"] = now_iso()
+    save_chat(chat)
+    job = begin_job(chat_id, "report")
+    asyncio.create_task(_run_report_job(job, chat_id=chat_id))
+    return sse(stream_job(job))
 
-        source = _conversation_as_source(chat)
-        try:
-            markdown = await call_ai(source)
-        except Exception as exc:
-            yield f"data: Erreur IA : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
 
-        if not markdown.strip():
-            yield "data: Erreur : réponse vide.\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
+@router.get("/api/chats/{chat_id}/events")
+async def chat_events(chat_id: str, kind: str = "reply"):
+    if kind not in ("reply", "report"):
+        raise HTTPException(status_code=400, detail="kind invalide")
+    chat = load_chat(chat_id)
+    live = get_job(chat_id, kind)
+    if live:
+        return sse(stream_job(live))
+    if kind == "reply":
+        job = _resume_or_restart_reply(chat)
+        if job:
+            return sse(stream_job(job))
+    else:
+        job = _resume_or_restart_report(chat)
+        if job:
+            return sse(stream_job(job))
 
-        if regenerating and existing_id:
-            report_id = re.sub(r"[^a-zA-Z0-9_\-]", "", existing_id)
-            filename = f"{report_id}.md"
-            filepath = config.RAPPORTS_DIR / filename
-        else:
-            m = re.search(r"^#\s+(.+)", markdown, re.MULTILINE)
-            title = m.group(1).strip() if m else (chat.get("title") or "conversation")
-            filename = f"{date.today().strftime('%Y-%m-%d')}-{slugify(title)}.md"
-            filepath = config.RAPPORTS_DIR / filename
-            if filepath.exists():
-                stem = filename[:-3]
-                filename = f"{stem}-{uuid.uuid4().hex[:4]}.md"
-                filepath = config.RAPPORTS_DIR / filename
-            report_id = filename[:-3]
-
-        try:
-            filepath.write_text(markdown, encoding="utf-8")
-            yield (
-                "data: \u2713 Rapport "
-                + ("écrasé" if regenerating else "créé")
-                + f" : {filename}\n\n"
-            ).encode()
-        except Exception as exc:
-            yield f"data: Erreur écriture : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
-
-        chat["report_id"] = report_id
-        chat["updated_at"] = now_iso()
-        try:
-            save_chat(chat)
-            yield "data: \u2713 Conversation liée au rapport (suppression désactivée)\n\n".encode()
-        except Exception as exc:
-            yield f"data: Erreur liaison : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
-
-        async for chunk in stream_cmd("Sync", [config.PYTHON, str(config.SCRIPT_SYNC), "push"]):
-            yield chunk
-
-        yield f"data: REPORT:{report_id}\n\n".encode()
+    async def snapshot() -> AsyncGenerator[bytes, None]:
+        yield f"data: CONVERSATION:{chat_id}\n\n".encode()
+        if chat.get("report_id"):
+            yield f"data: REPORT:{chat['report_id']}\n\n".encode()
+        if kind == "reply":
+            last = None
+            for m in chat.get("messages") or []:
+                if m.get("role") == "assistant" and (m.get("content") or "").strip():
+                    last = m
+            if last:
+                yield f"data: ASSISTANT:{last.get('id')}\n\n".encode()
+                yield b"data: [ANSWER_START]\n\n"
+                text = (last.get("content") or "").replace("\n", "\\n")
+                yield f"data: {text}\n\n".encode()
+                yield b"data: [ANSWER_END]\n\n"
+            yield f"data: TITLE:{chat.get('title') or 'Conversation'}\n\n".encode()
+        elif chat.get("report_id"):
+            yield f"data: REPORT:{chat['report_id']}\n\n".encode()
         yield b"data: [DONE]\n\n"
 
-    return sse(stream())
+    return sse(snapshot())
 
 
 @router.post("/api/chat")
@@ -589,154 +862,115 @@ async def chat_with_asclepios(body: ChatRequest):
     if not opening and not (body.message or "").strip():
         raise HTTPException(status_code=400, detail="Message vide")
 
-    async def stream() -> AsyncGenerator[bytes, None]:
-        try:
-            if opening:
-                if body.conversation_id:
-                    chat = load_chat(body.conversation_id)
-                    if chat.get("kind") != "checkin":
-                        chat["kind"] = "checkin"
-                        if not chat.get("title") or chat.get("title") == "Nouvelle conversation":
-                            chat["title"] = "Comment ça va ?"
-                        save_chat(chat)
-                else:
-                    chat = get_or_create_today_checkin()
-            elif body.conversation_id:
-                chat = load_chat(body.conversation_id)
-            else:
-                now = now_iso()
-                chat = {
-                    "id": _new_chat_id(),
-                    "title": "Nouvelle conversation",
-                    "created_at": now,
-                    "updated_at": now,
-                    "messages": [],
-                    "report_id": None,
-                }
-                save_chat(chat)
-        except HTTPException:
-            yield "data: Erreur : conversation introuvable\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
-        except Exception as exc:
-            yield f"data: Erreur : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
-
-        yield f"data: CONVERSATION:{chat['id']}\n\n".encode()
-        if chat.get("report_id"):
-            yield f"data: REPORT:{chat['report_id']}\n\n".encode()
-
-        history = list(chat.get("messages") or [])
+    try:
         if opening:
-            existing = next(
-                (
-                    m
-                    for m in reversed(history)
-                    if m.get("role") == "assistant" and (m.get("content") or "").strip()
-                ),
-                None,
-            )
-            if existing:
+            if body.conversation_id:
+                chat = load_chat(body.conversation_id)
+                if chat.get("kind") != "checkin":
+                    chat["kind"] = "checkin"
+                    if not chat.get("title") or chat.get("title") == "Nouvelle conversation":
+                        chat["title"] = "Comment ça va ?"
+                    save_chat(chat)
+            else:
+                chat = get_or_create_today_checkin()
+        elif body.conversation_id:
+            chat = load_chat(body.conversation_id)
+        else:
+            now = now_iso()
+            chat = {
+                "id": _new_chat_id(),
+                "title": "Nouvelle conversation",
+                "created_at": now,
+                "updated_at": now,
+                "messages": [],
+                "report_id": None,
+            }
+            save_chat(chat)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    live = get_job(chat["id"], "reply")
+    if live and not live.done:
+        return sse(stream_job(live))
+    pending = chat.get("pending") if isinstance(chat.get("pending"), dict) else None
+    if pending and pending.get("kind") == "reply":
+        job = _resume_or_restart_reply(chat)
+        if job:
+            return sse(stream_job(job))
+
+    history = list(chat.get("messages") or [])
+    if opening:
+        existing = next(
+            (
+                m
+                for m in reversed(history)
+                if m.get("role") == "assistant"
+                and (m.get("content") or "").strip()
+                and m.get("status") != "generating"
+            ),
+            None,
+        )
+        if existing:
+            async def replay() -> AsyncGenerator[bytes, None]:
+                yield f"data: CONVERSATION:{chat['id']}\n\n".encode()
+                yield f"data: ASSISTANT:{existing.get('id')}\n\n".encode()
                 yield b"data: [ANSWER_START]\n\n"
                 text = (existing.get("content") or "").replace("\n", "\\n")
                 yield f"data: {text}\n\n".encode()
                 yield b"data: [ANSWER_END]\n\n"
                 yield f"data: TITLE:{chat.get('title') or 'Comment ça va ?'}\n\n".encode()
                 yield b"data: [DONE]\n\n"
-                return
-        else:
-            user_msg = {
-                "id": f"u-{uuid.uuid4().hex[:12]}",
-                "role": "user",
-                "content": body.message.strip(),
-                "created_at": now_iso(),
-            }
-            chat["messages"] = history + [user_msg]
-            if chat.get("title") in (None, "", "Nouvelle conversation"):
-                chat["title"] = _title_from_message(body.message)
-            chat["updated_at"] = now_iso()
-            if "report_id" not in chat:
-                chat["report_id"] = None
-            try:
-                save_chat(chat)
-                yield "data: Message utilisateur enregistré\n\n".encode()
-            except Exception as exc:
-                yield f"data: Erreur sauvegarde : {exc}\n\n".encode()
-                yield b"data: [ERROR]\n\n"
-                return
 
-        async for chunk in stream_cmd("Sync", [config.PYTHON, str(config.SCRIPT_SYNC), "push"]):
-            yield chunk
+            return sse(replay())
 
-        yield "data: Chargement du dossier médical…\n\n".encode()
-        try:
-            from api.medical_context import build_medical_context
+        generating = next(
+            (m for m in reversed(history) if m.get("status") == "generating"),
+            None,
+        )
+        if generating:
+            job = _resume_or_restart_reply(chat)
+            if job:
+                return sse(stream_job(job))
 
-            context = await asyncio.to_thread(build_medical_context, config.VAULT_DIR)
-            yield f"data: Contexte prêt ({len(context)} caractères)\n\n".encode()
-
-            vision_images = _resolve_vision_images(body.message or "")
-            if vision_images:
-                names = ", ".join(p.name for p in vision_images)
-                yield f"data: Vision : {len(vision_images)} photo(s) ouverte(s) — {names}\n\n".encode()
-
-            yield "data: Appel au modèle IA…\n\n".encode()
-            prompt = _build_chat_prompt(
-                body.message,
-                history,
-                context,
-                kind=str(chat.get("kind") or "") or None,
-                opening=opening,
-            )
-            raw_answer = await _chat_ai(prompt, vision_images)
-        except Exception as exc:
-            yield f"data: Erreur : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
-
-        if not raw_answer:
-            yield "data: Erreur : réponse vide.\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
-
-        answer, edit_proposals = _extract_edit_proposals(raw_answer)
-        for proposal in edit_proposals:
-            proposal["status"] = "pending"
-            proposal["created_at"] = now_iso()
-            proposal_json = json.dumps(proposal, ensure_ascii=False)
-            yield f"data: EDIT_PROPOSAL:{proposal_json}\n\n".encode()
-
-        yield b"data: [ANSWER_START]\n\n"
-        chunk_size = 80
-        for i in range(0, len(answer), chunk_size):
-            piece = answer[i : i + chunk_size]
-            safe = piece.replace("\n", "\\n")
-            yield f"data: {safe}\n\n".encode()
-            await asyncio.sleep(0)
-        yield b"data: [ANSWER_END]\n\n"
-
-        assistant_msg = {
-            "id": f"a-{uuid.uuid4().hex[:12]}",
-            "role": "assistant",
-            "content": answer,
+    assistant_id = f"a-{uuid.uuid4().hex[:12]}"
+    if not opening:
+        user_msg = {
+            "id": f"u-{uuid.uuid4().hex[:12]}",
+            "role": "user",
+            "content": body.message.strip(),
             "created_at": now_iso(),
         }
-        if edit_proposals:
-            assistant_msg["edit_proposals"] = edit_proposals
-        chat["messages"].append(assistant_msg)
-        chat["updated_at"] = now_iso()
-        try:
-            save_chat(chat)
-            yield "data: Réponse enregistrée dans le vault\n\n".encode()
-            yield f"data: TITLE:{chat['title']}\n\n".encode()
-        except Exception as exc:
-            yield f"data: Erreur sauvegarde réponse : {exc}\n\n".encode()
-            yield b"data: [ERROR]\n\n"
-            return
+        chat["messages"] = history + [user_msg]
+        if chat.get("title") in (None, "", "Nouvelle conversation"):
+            chat["title"] = _title_from_message(body.message)
+    chat["messages"] = list(chat.get("messages") or [])
+    chat["messages"].append(
+        {
+            "id": assistant_id,
+            "role": "assistant",
+            "content": "",
+            "status": "generating",
+            "created_at": now_iso(),
+        }
+    )
+    chat["updated_at"] = now_iso()
+    if "report_id" not in chat:
+        chat["report_id"] = None
+    _set_pending(chat, "reply", assistant_id)
+    save_chat(chat)
+    asyncio.create_task(_push_vault_quiet())
 
-        async for chunk in stream_cmd("Sync", [config.PYTHON, str(config.SCRIPT_SYNC), "push"]):
-            yield chunk
-        yield b"data: [DONE]\n\n"
-
-    return sse(stream())
+    job = begin_job(chat["id"], "reply", assistant_id=assistant_id)
+    asyncio.create_task(
+        _run_reply_job(
+            job,
+            chat_id=chat["id"],
+            message=body.message,
+            opening=opening,
+            kind=str(chat.get("kind") or "") or None,
+            assistant_id=assistant_id,
+        )
+    )
+    return sse(stream_job(job))

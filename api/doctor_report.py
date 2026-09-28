@@ -20,6 +20,8 @@ INCLUDE_KEYS = (
     "ordonnances",
     "prise_de_sang",
     "poids",
+    "humeur",
+    "sport",
     "labs",
     "medication_series",
 )
@@ -145,6 +147,61 @@ def _count_poids(start: date, end: date) -> int:
     return n
 
 
+def _mood_day(raw: str | None) -> date | None:
+    value = (raw or "").strip()
+    if not value:
+        return None
+    parsed = parse_day(value[:10])
+    if parsed:
+        return parsed
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _count_humeur(start: date, end: date) -> int:
+    path = config.HUMEUR_CSV
+    if not path.exists():
+        return 0
+    n = 0
+    with path.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if _in_period(_mood_day(row.get("at") or row.get("date")), start, end):
+                n += 1
+    return n
+
+
+def _count_sport(start: date, end: date) -> int:
+    data = _read_json(config.SPORT_LOG_PATH) or {}
+    n = 0
+    for session in data.get("sessions") or []:
+        if _in_period(parse_day(str(session.get("date") or "")), start, end):
+            n += 1
+    return n
+
+
+def _report_emotions_map() -> dict[str, list[str]]:
+    from api.medical_context import EMOTION_LABELS
+
+    data = _read_json(config.RAPPORTS_EMOTIONS_PATH) or {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for key, value in data.items():
+        if not isinstance(key, str):
+            continue
+        ids = value
+        if isinstance(value, dict):
+            ids = value.get("emotions") or value.get("ids")
+        if not isinstance(ids, list):
+            continue
+        labels = [EMOTION_LABELS[e] for e in ids if isinstance(e, str) and e in EMOTION_LABELS]
+        if labels:
+            out[key] = labels
+    return out
+
+
 def _count_labs_points(start: date, end: date, analyte: str) -> int:
     path = config.LABS_CSV
     if not path.exists() or not analyte:
@@ -242,6 +299,18 @@ def include_options(doctor: dict, date_from: date, date_to: date) -> list[dict]:
             "default": True,
         },
         {
+            "id": "humeur",
+            "label": "Humeur",
+            "hint": f"{_count_humeur(date_from, date_to)} note(s)",
+            "default": True,
+        },
+        {
+            "id": "sport",
+            "label": "Sport",
+            "hint": f"{_count_sport(date_from, date_to)} séance(s)",
+            "default": True,
+        },
+        {
             "id": "labs",
             "label": str(labs_cfg.get("title") or "Suivi biologique"),
             "hint": f"{_count_labs_points(date_from, date_to, str(labs_cfg.get('primaryAnalyte') or ''))} point(s)",
@@ -310,6 +379,97 @@ def _section_poids(start: date, end: date, fig_rel: str | None) -> str:
     return body
 
 
+def _mood_points(start: date, end: date) -> list[tuple[datetime, float, str]]:
+    path = config.HUMEUR_CSV
+    if not path.exists():
+        return []
+    out: list[tuple[datetime, float, str]] = []
+    with path.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            day = _mood_day(row.get("at") or row.get("date"))
+            if day is None or not _in_period(day, start, end):
+                continue
+            try:
+                value = float(str(row.get("score") or "").replace(",", "."))
+            except ValueError:
+                continue
+            stamp = str(row.get("at") or "").strip() or _fmt(day)
+            out.append((datetime(day.year, day.month, day.day), value, stamp))
+    out.sort(key=lambda p: p[0])
+    return out
+
+
+def _section_humeur(start: date, end: date, fig_rel: str | None) -> str:
+    points = _mood_points(start, end)
+    rows = [[p[2], str(int(p[1]) if p[1] == int(p[1]) else p[1])] for p in points]
+    body = "### Humeur (0–10)\n\n" + _md_table(["Horodatage", "Score"], rows)
+    if fig_rel:
+        body += f"\n![Évolution de l’humeur]({fig_rel})\n"
+    return body
+
+
+def _section_sport(start: date, end: date) -> str:
+    program = _read_json(config.SPORT_PATH) or {}
+    exercises = {
+        str(e.get("id") or ""): str(e.get("name") or e.get("id") or "")
+        for e in (program.get("exercises") or [])
+        if isinstance(e, dict)
+    }
+    log = _read_json(config.SPORT_LOG_PATH) or {}
+    rows: list[list[str]] = []
+    for session in log.get("sessions") or []:
+        if not isinstance(session, dict):
+            continue
+        day = parse_day(str(session.get("date") or ""))
+        if not _in_period(day, start, end):
+            continue
+        items = session.get("items") or []
+        if not items:
+            rows.append([_fmt(day), "—", "—", "—"])
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            exo_id = str(item.get("exercise_id") or "")
+            name = str(item.get("name") or "").strip() or exercises.get(exo_id) or exo_id or "—"
+            bits: list[str] = []
+            sets = item.get("sets")
+            reps = item.get("reps")
+            seconds = item.get("seconds")
+            if sets and reps:
+                bits.append(f"{sets} × {reps}")
+            elif sets and seconds:
+                bits.append(f"{sets} × {seconds} s")
+            elif sets:
+                bits.append(f"{sets} série(s)")
+            note = str(item.get("note") or "").strip()
+            if note:
+                bits.append(note)
+            done = "fait" if item.get("done") else "pas fait"
+            rows.append([_fmt(day), name, " · ".join(bits) or "—", done])
+    prog_bits = []
+    for exo in program.get("exercises") or []:
+        if not isinstance(exo, dict):
+            continue
+        name = str(exo.get("name") or "")
+        sets = exo.get("sets")
+        reps = exo.get("reps")
+        seconds = exo.get("seconds")
+        detail = []
+        if sets:
+            detail.append(f"{sets} série(s)")
+        if reps:
+            detail.append(f"{reps} rep")
+        if seconds:
+            detail.append(f"{seconds} s")
+        prog_bits.append(f"- {name}" + (f" ({', '.join(detail)})" if detail else ""))
+    body = "### Sport\n\n"
+    if prog_bits:
+        body += "Programme :\n" + "\n".join(prog_bits) + "\n\n"
+    body += _md_table(["Date", "Exercice", "Prescription", "Réalisation"], rows)
+    return body
+
+
 def _section_treatments(start: date, end: date, compact: bool) -> str:
     data = _read_json(config.TRAITEMENTS_PATH) or {}
     items = data.get("traitements") or []
@@ -356,6 +516,7 @@ def _section_treatments(start: date, end: date, compact: bool) -> str:
 def _section_rapports(start: date, end: date, compact: bool) -> str:
     rows: list[list[str]] = []
     extras: list[str] = []
+    emotions_map = _report_emotions_map()
     if config.RAPPORTS_DIR.exists():
         files = sorted(
             (p for p in config.RAPPORTS_DIR.glob("*.md") if p.name.lower() != "readme.md"),
@@ -370,7 +531,8 @@ def _section_rapports(start: date, end: date, compact: bool) -> str:
             m = re.search(r"^#\s+(.+)", raw, re.MULTILINE)
             if m:
                 title = m.group(1).strip()
-            rows.append([_fmt(day), title, f"`{path.name}`"])
+            felt = ", ".join(emotions_map.get(path.stem) or []) or "—"
+            rows.append([_fmt(day), title, felt, f"`{path.name}`"])
             if not compact:
                 excerpt = []
                 for line in raw.splitlines():
@@ -380,7 +542,7 @@ def _section_rapports(start: date, end: date, compact: bool) -> str:
                         break
                 if excerpt:
                     extras.append(f"- **{title}** : {excerpt[0]}")
-    body = "### Rapports personnels\n\n" + _md_table(["Date", "Titre", "Fichier"], rows)
+    body = "### Rapports personnels\n\n" + _md_table(["Date", "Titre", "Émotions", "Fichier"], rows)
     if extras:
         body += "\n" + "\n".join(extras[:12]) + "\n"
     return body
@@ -499,6 +661,11 @@ def build_charts(
         path = plot_line(pts, fig_dir / "poids.png", title="Poids", ylabel="kg")
         if path:
             rels["poids"] = f"figures/{stem}/poids.png"
+    if "humeur" in include:
+        pts = [(d, v) for d, v, _ in _mood_points(start, end)]
+        path = plot_line(pts, fig_dir / "humeur.png", title="Humeur", ylabel="0–10")
+        if path:
+            rels["humeur"] = f"figures/{stem}/humeur.png"
     if "labs" in include:
         cfg = labs_config()
         analyte = str(cfg.get("primaryAnalyte") or "")
@@ -560,6 +727,10 @@ def build_factual(
         parts.append(_section_pdfs("labs", start, end))
     if "poids" in include:
         parts.append(_section_poids(start, end, figures.get("poids")))
+    if "humeur" in include:
+        parts.append(_section_humeur(start, end, figures.get("humeur")))
+    if "sport" in include:
+        parts.append(_section_sport(start, end))
     if "labs" in include:
         parts.append(_section_labs(start, end, figures.get("labs")))
     if "medication_series" in include:
